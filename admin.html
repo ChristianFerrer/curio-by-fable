@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Curio by Fable</title>
+  <meta name="robots" content="noindex, nofollow">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- Config -->
+  <script src="/public/config.js"></script>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="/src/css/main.css">
+  <link rel="stylesheet" href="/src/css/components.css">
+  <link rel="stylesheet" href="/src/css/animations.css">
+  <link rel="stylesheet" href="/src/css/admin.css">
+
+  <!-- Admin App JS -->
+  <script type="module" src="/src/js/admin.js"></script>
+</head>
+<body>
+<div x-data="adminApp" x-cloak>
+
+  <!-- ═══════════════════════════════════════════════════════
+       LOGIN SCREEN (si no está autenticado o no es admin)
+  ═══════════════════════════════════════════════════════ -->
+  <div class="admin-login-screen" x-show="!user || !isAdmin">
+    <div class="admin-login-card">
+      <div class="admin-login-logo">
+        <div class="nav-logo" style="justify-content:center">
+          <span class="logo-curio">Curio</span>
+          <span class="logo-by">by</span>
+          <span class="logo-fable">Fable</span>
+        </div>
+        <small>Panel de administración</small>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:var(--sp-md)">
+        <div class="form-group">
+          <label class="form-label">Email de administrador</label>
+          <input class="form-control" type="email" x-model="loginEmail" placeholder="admin@curiobyfable.com" @keydown.enter="login()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contraseña</label>
+          <input class="form-control" type="password" x-model="loginPassword" placeholder="••••••••" @keydown.enter="login()">
+        </div>
+        <p class="form-error" x-show="authError" x-text="authError"></p>
+        <button class="btn btn-primary btn-full btn-lg" @click="login()" :disabled="authLoading">
+          <span x-show="!authLoading">🔐 Acceder al panel</span>
+          <span x-show="authLoading">Verificando...</span>
+        </button>
+      </div>
+
+      <div style="margin-top:var(--sp-lg);text-align:center">
+        <a href="/" style="color:var(--text-3);font-size:0.85rem">← Volver a la tienda</a>
+      </div>
+
+      <div style="margin-top:var(--sp-lg);padding:var(--sp-md);background:var(--warning-light);border-radius:var(--r-md);font-size:0.8rem;color:var(--warning)">
+        ⚠️ Acceso restringido. Para crear el primer administrador, regístrate en la tienda y activa <code>is_admin=true</code> en Supabase Dashboard.
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       ADMIN LAYOUT (solo si es admin)
+  ═══════════════════════════════════════════════════════ -->
+  <div class="admin-root" x-show="user && isAdmin">
+
+    <!-- Sidebar overlay (mobile) -->
+    <div class="overlay-bg" x-show="sidebarOpen" @click="sidebarOpen=false" style="z-index:99"></div>
+
+    <!-- ── Sidebar ────────────────────────────────────────── -->
+    <aside class="admin-sidebar" :class="{open: sidebarOpen}">
+      <div class="sidebar-logo">
+        <div class="nav-logo">
+          <span class="logo-curio">Curio</span>
+          <span class="logo-by">by</span>
+          <span class="logo-fable">Fable</span>
+        </div>
+        <small style="color:rgba(255,255,255,.4);font-family:var(--font-head);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;display:block">Admin Panel</small>
+      </div>
+
+      <nav class="sidebar-nav">
+        <span class="sidebar-section-label">Principal</span>
+
+        <button class="sidebar-nav-item" :class="{active:view==='dashboard'}" @click="setView('dashboard')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          Dashboard
+        </button>
+
+        <span class="sidebar-section-label">Gestión</span>
+
+        <button class="sidebar-nav-item" :class="{active:view==='products'}" @click="setView('products')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+          Productos
+          <span class="badge badge-blue" style="margin-left:auto" x-show="adminProducts.length" x-text="adminProducts.length"></span>
+        </button>
+
+        <button class="sidebar-nav-item" :class="{active:view==='orders'}" @click="setView('orders')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+          Pedidos
+          <span class="badge badge-red" style="margin-left:auto" x-show="kpis?.orders?.today > 0" x-text="kpis?.orders?.today + ' hoy'"></span>
+        </button>
+
+        <button class="sidebar-nav-item" :class="{active:view==='users'}" @click="setView('users')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          Usuarios
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div style="display:flex;align-items:center;gap:var(--sp-sm);margin-bottom:var(--sp-md)">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;color:white;font-family:var(--font-head);font-weight:900;font-size:0.85rem" x-text="user?.email?.[0]?.toUpperCase()"></div>
+          <div style="flex:1;min-width:0">
+            <p style="color:white;font-size:0.8rem;font-weight:700;font-family:var(--font-head);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="user?.email"></p>
+            <p style="color:rgba(255,255,255,.4);font-size:0.7rem">Administrador</p>
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-full btn-sm" style="color:rgba(255,255,255,.6);border-color:rgba(255,255,255,.2)" @click="logout()">
+          Cerrar sesión
+        </button>
+        <a href="/" target="_blank" class="btn btn-ghost btn-full btn-sm" style="margin-top:var(--sp-xs);color:rgba(255,255,255,.4);border-color:transparent;font-size:0.8rem">
+          ← Ver tienda
+        </a>
+      </div>
+    </aside>
+
+    <!-- ── Main content ───────────────────────────────────── -->
+    <main class="admin-main">
+
+      <!-- Mobile header -->
+      <div class="admin-mobile-header">
+        <button class="hamburger-btn" @click="sidebarOpen=!sidebarOpen">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="nav-logo">
+          <span class="logo-curio" style="font-size:1.2rem">Curio</span>
+          <span class="logo-by" style="font-size:0.75rem">by</span>
+          <span class="logo-fable" style="font-size:1.2rem">Fable</span>
+        </div>
+        <div style="width:40px"></div>
+      </div>
+
+      <!-- Top bar -->
+      <div class="admin-topbar">
+        <h1 class="admin-page-title">
+          <span x-show="view==='dashboard'">📊 Dashboard</span>
+          <span x-show="view==='products'">📦 Productos</span>
+          <span x-show="view==='orders'">🧾 Pedidos</span>
+          <span x-show="view==='users'">👥 Usuarios</span>
+        </h1>
+        <div class="flex items-center gap-md">
+          <span style="font-size:0.8rem;color:var(--text-3)" x-text="new Date().toLocaleDateString('es-ES',{weekday:'long',day:'2-digit',month:'long'})"></span>
+          <div class="admin-user-chip">
+            <span>👤</span>
+            <span x-text="user?.email?.split('@')[0]"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-content">
+
+        <!-- ════════════════════════════════════════════════
+             DASHBOARD VIEW
+        ════════════════════════════════════════════════ -->
+        <div x-show="view==='dashboard'">
+          <div x-show="kpisLoading" class="spinner"></div>
+          <div x-show="!kpisLoading && kpis">
+
+            <!-- KPI Cards -->
+            <div class="kpi-grid">
+              <div class="kpi-card kpi-blue">
+                <div class="kpi-icon">📦</div>
+                <div class="kpi-label">Pedidos hoy</div>
+                <div class="kpi-value" x-text="kpis?.orders?.today || 0"></div>
+                <div class="kpi-sub">Esta semana: <strong x-text="kpis?.orders?.week || 0"></strong></div>
+              </div>
+
+              <div class="kpi-card kpi-green">
+                <div class="kpi-icon">💰</div>
+                <div class="kpi-label">Revenue mensual</div>
+                <div class="kpi-value" x-text="revenueFormatted"></div>
+                <div class="kpi-sub" x-show="kpis?.revenue?.growth">
+                  <span class="kpi-growth" :class="parseFloat(kpis?.revenue?.growth) >= 0 ? 'up' : 'down'"
+                        x-text="(parseFloat(kpis?.revenue?.growth) >= 0 ? '↑' : '↓') + Math.abs(kpis?.revenue?.growth) + '%'"></span>
+                  vs mes anterior
+                </div>
+              </div>
+
+              <div class="kpi-card kpi-wood">
+                <div class="kpi-icon">👥</div>
+                <div class="kpi-label">Total usuarios</div>
+                <div class="kpi-value" x-text="kpis?.users?.total || 0"></div>
+                <div class="kpi-sub">Nuevos esta semana: <strong x-text="kpis?.users?.new_week || 0"></strong></div>
+              </div>
+
+              <div class="kpi-card kpi-yellow">
+                <div class="kpi-icon">👁️</div>
+                <div class="kpi-label">Visitas hoy</div>
+                <div class="kpi-value" x-text="kpis?.page_views?.today || 0"></div>
+                <div class="kpi-sub">Esta semana: <strong x-text="kpis?.page_views?.week || 0"></strong></div>
+              </div>
+
+              <div class="kpi-card kpi-red">
+                <div class="kpi-icon">📋</div>
+                <div class="kpi-label">Pedidos este mes</div>
+                <div class="kpi-value" x-text="kpis?.orders?.month || 0"></div>
+                <div class="kpi-sub" x-show="kpis?.orders?.growth">
+                  <span class="kpi-growth" :class="parseFloat(kpis?.orders?.growth) >= 0 ? 'up' : 'down'"
+                        x-text="(parseFloat(kpis?.orders?.growth) >= 0 ? '↑' : '↓') + Math.abs(kpis?.orders?.growth) + '%'"></span>
+                  vs mes anterior
+                </div>
+              </div>
+
+              <div class="kpi-card" style="border-color: var(--border)">
+                <div class="kpi-icon" style="background:var(--surface-2)">⚠️</div>
+                <div class="kpi-label">Stock bajo</div>
+                <div class="kpi-value" :style="(kpis?.products?.low_stock||0) > 0 ? 'color:var(--warning)' : 'color:var(--success)'"
+                     x-text="kpis?.products?.low_stock || 0"></div>
+                <div class="kpi-sub">de <strong x-text="kpis?.products?.total || 0"></strong> productos activos</div>
+              </div>
+            </div>
+
+            <!-- Charts row -->
+            <div class="grid-2" style="margin-bottom:var(--sp-xl)">
+              <!-- Top productos -->
+              <div class="chart-card">
+                <h3 class="chart-card-title">🏆 Top productos del mes</h3>
+                <div x-show="!kpis?.top_products?.length" style="color:var(--text-3);font-size:0.9rem">Sin datos aún</div>
+                <template x-for="(p, idx) in (kpis?.top_products || [])" :key="p.product_id">
+                  <div class="top-product-row">
+                    <div class="top-product-rank" x-text="idx+1"></div>
+                    <span class="top-product-name" x-text="p.name"></span>
+                    <div style="display:flex;align-items:center;gap:var(--sp-sm);min-width:80px">
+                      <div class="mini-bar" style="flex:1">
+                        <div class="mini-bar-fill" :style="'width:' + Math.round((p.quantity/topProductsMax())*100) + '%'"></div>
+                      </div>
+                      <span class="top-product-qty" x-text="p.quantity + ' uds'"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+
+              <!-- Top páginas -->
+              <div class="chart-card">
+                <h3 class="chart-card-title">📄 Páginas más visitadas (7 días)</h3>
+                <div x-show="!kpis?.top_pages?.length" style="color:var(--text-3);font-size:0.9rem">Sin datos aún</div>
+                <template x-for="page in (kpis?.top_pages || [])" :key="page.page">
+                  <div class="top-product-row">
+                    <span class="top-product-name" style="font-family:var(--font-body);font-weight:500" x-text="page.page || '/'"></span>
+                    <span class="top-product-qty" x-text="page.count + ' visitas'"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Pedidos recientes -->
+            <div class="admin-card">
+              <div class="admin-card-header">
+                <h3 class="admin-card-title">🧾 Pedidos recientes</h3>
+                <button class="btn btn-ghost btn-sm" @click="setView('orders')">Ver todos →</button>
+              </div>
+              <div x-show="!kpis?.recent_orders?.length" style="padding:var(--sp-xl);text-align:center;color:var(--text-3)">Sin pedidos aún</div>
+              <table class="data-table" x-show="kpis?.recent_orders?.length">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Cliente</th>
+                    <th>Total</th>
+                    <th>Estado</th>
+                    <th>Fecha</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="order in (kpis?.recent_orders || [])" :key="order.id">
+                    <tr>
+                      <td style="font-family:var(--font-head);font-size:0.8rem;color:var(--text-3)" x-text="'#' + order.id.slice(0,8)"></td>
+                      <td x-text="order.shipping_address?.full_name || '—'"></td>
+                      <td style="font-family:var(--font-head);font-weight:800;color:var(--blue)" x-text="formatPrice(order.total)"></td>
+                      <td><span class="status-badge" :class="'status-' + order.status" x-text="formatStatus(order.status)"></span></td>
+                      <td style="color:var(--text-3);font-size:0.85rem" x-text="formatDate(order.created_at)"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ════════════════════════════════════════════════
+             PRODUCTS VIEW
+        ════════════════════════════════════════════════ -->
+        <div x-show="view==='products'">
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <h3 class="admin-card-title">📦 Gestión de productos</h3>
+              <div class="flex items-center gap-md">
+                <div class="admin-search">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                  <input class="form-control" type="text" placeholder="Buscar producto..." x-model="productSearch">
+                </div>
+                <button class="btn btn-primary" @click="openCreateProduct()">+ Nuevo producto</button>
+              </div>
+            </div>
+
+            <div x-show="productsLoading" class="spinner" style="margin:var(--sp-xl)"></div>
+            <div x-show="!productsLoading && !filteredProducts.length" style="padding:var(--sp-xl);text-align:center;color:var(--text-3)">
+              <span x-show="!adminProducts.length">No hay productos. ¡Crea el primero!</span>
+              <span x-show="adminProducts.length && !filteredProducts.length">Sin resultados para "<span x-text="productSearch"></span>"</span>
+            </div>
+
+            <div style="overflow-x:auto" x-show="filteredProducts.length">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Imagen</th>
+                    <th>Nombre</th>
+                    <th>Categoría</th>
+                    <th>Precio</th>
+                    <th>Stock</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="product in filteredProducts" :key="product.id">
+                    <tr>
+                      <td>
+                        <img class="table-img" :src="product.images?.[0] || 'https://via.placeholder.com/48'" :alt="product.name">
+                      </td>
+                      <td>
+                        <div style="font-weight:700;font-family:var(--font-head)" x-text="product.name"></div>
+                        <div style="font-size:0.75rem;color:var(--text-3)" x-text="product.slug"></div>
+                      </td>
+                      <td>
+                        <span class="badge badge-wood" x-text="formatCategory(product.category).split(' ').slice(1).join(' ')"></span>
+                      </td>
+                      <td>
+                        <div style="font-family:var(--font-head);font-weight:900;color:var(--blue)" x-text="formatPrice(product.price)"></div>
+                        <div style="font-size:0.75rem;text-decoration:line-through;color:var(--text-3)" x-show="product.compare_price" x-text="formatPrice(product.compare_price)"></div>
+                      </td>
+                      <td>
+                        <span :class="product.stock > 0 ? 'badge badge-green' : 'badge badge-red'" x-text="product.stock + ' uds'"></span>
+                      </td>
+                      <td>
+                        <span class="badge" :class="product.active ? 'badge-green' : 'badge-gray'" x-text="product.active ? '✓ Activo' : '✗ Oculto'"></span>
+                        <span class="badge badge-yellow" x-show="product.featured" style="margin-left:4px">⭐</span>
+                      </td>
+                      <td>
+                        <div class="flex gap-sm">
+                          <button class="btn btn-ghost btn-sm" @click="openEditProduct(product)" title="Editar">✏️</button>
+                          <button class="btn btn-ghost btn-sm" @click="deleteProduct(product.id, product.name)" :disabled="!product.active" title="Desactivar">🗑️</button>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ════════════════════════════════════════════════
+             ORDERS VIEW
+        ════════════════════════════════════════════════ -->
+        <div x-show="view==='orders'">
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <h3 class="admin-card-title">🧾 Gestión de pedidos</h3>
+              <div class="flex items-center gap-md flex-wrap">
+                <div class="admin-search">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                  <input class="form-control" type="text" placeholder="Buscar pedido o cliente..." x-model="orderSearch">
+                </div>
+                <select class="form-control" style="width:auto" x-model="ordersStatusFilter">
+                  <option value="">Todos los estados</option>
+                  <option value="pendiente">Pendiente</option>
+                  <option value="procesando">Procesando</option>
+                  <option value="enviado">Enviado</option>
+                  <option value="entregado">Entregado</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+                <button class="btn btn-ghost btn-sm" @click="loadOrders()">🔄 Actualizar</button>
+              </div>
+            </div>
+
+            <div x-show="ordersLoading" class="spinner" style="margin:var(--sp-xl)"></div>
+            <div x-show="!ordersLoading && !filteredOrders.length" style="padding:var(--sp-xl);text-align:center;color:var(--text-3)">Sin pedidos</div>
+
+            <div style="overflow-x:auto" x-show="filteredOrders.length">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Pedido</th>
+                    <th>Cliente</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Estado</th>
+                    <th>Fecha</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="order in filteredOrders" :key="order.id">
+                    <tr>
+                      <td style="font-family:var(--font-head);font-size:0.8rem;color:var(--text-3)" x-text="'#' + order.id.slice(0,8) + '...'"></td>
+                      <td>
+                        <div style="font-weight:700;font-size:0.9rem" x-text="order.shipping_address?.full_name || '—'"></div>
+                        <div style="font-size:0.75rem;color:var(--text-3)" x-text="order.user_profile?.email || ''"></div>
+                      </td>
+                      <td>
+                        <span class="badge badge-blue" x-text="(order.order_items?.length || 0) + ' items'"></span>
+                      </td>
+                      <td style="font-family:var(--font-head);font-weight:900;color:var(--blue)" x-text="formatPrice(order.total)"></td>
+                      <td><span class="status-badge" :class="'status-' + order.status" x-text="formatStatus(order.status)"></span></td>
+                      <td style="color:var(--text-3);font-size:0.85rem" x-text="formatDatetime(order.created_at)"></td>
+                      <td>
+                        <select class="status-select" :value="order.status" @change="updateOrderStatus(order.id, $event.target.value)">
+                          <option value="pendiente">Pendiente</option>
+                          <option value="procesando">Procesando</option>
+                          <option value="enviado">Enviado</option>
+                          <option value="entregado">Entregado</option>
+                          <option value="cancelado">Cancelado</option>
+                        </select>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ════════════════════════════════════════════════
+             USERS VIEW
+        ════════════════════════════════════════════════ -->
+        <div x-show="view==='users'">
+          <div class="stats-row" x-show="kpis">
+            <div class="stat-pill">👥 Total: <strong x-text="kpis?.users?.total || 0"></strong></div>
+            <div class="stat-pill">🆕 Nuevos hoy: <strong x-text="kpis?.users?.new_today || 0"></strong></div>
+            <div class="stat-pill">📅 Nuevos esta semana: <strong x-text="kpis?.users?.new_week || 0"></strong></div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <h3 class="admin-card-title">👥 Gestión de usuarios</h3>
+              <div class="flex items-center gap-md">
+                <div class="admin-search">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                  <input class="form-control" type="text" placeholder="Buscar por email o nombre..." x-model="userSearch">
+                </div>
+                <button class="btn btn-ghost btn-sm" @click="loadUsers()">🔄</button>
+              </div>
+            </div>
+
+            <div x-show="usersLoading" class="spinner" style="margin:var(--sp-xl)"></div>
+            <div x-show="!usersLoading && !filteredUsers.length" style="padding:var(--sp-xl);text-align:center;color:var(--text-3)">Sin usuarios</div>
+
+            <div style="overflow-x:auto" x-show="filteredUsers.length">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Usuario</th>
+                    <th>Email</th>
+                    <th>Teléfono</th>
+                    <th>Pedidos</th>
+                    <th>Rol</th>
+                    <th>Registro</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="u in filteredUsers" :key="u.id">
+                    <tr>
+                      <td>
+                        <div class="flex items-center gap-sm">
+                          <div style="width:32px;height:32px;border-radius:50%;background:var(--blue-light);display:flex;align-items:center;justify-content:center;color:var(--blue);font-family:var(--font-head);font-weight:900;font-size:0.85rem;flex-shrink:0"
+                               x-text="(u.full_name || u.email)?.[0]?.toUpperCase()"></div>
+                          <span style="font-weight:700;font-size:0.9rem" x-text="u.full_name || '—'"></span>
+                        </div>
+                      </td>
+                      <td style="color:var(--text-2);font-size:0.9rem" x-text="u.email"></td>
+                      <td style="color:var(--text-3);font-size:0.85rem" x-text="u.phone || '—'"></td>
+                      <td>
+                        <span class="badge" :class="u.total_orders > 0 ? 'badge-blue' : 'badge-gray'"
+                              x-text="u.total_orders + ' pedidos'"></span>
+                      </td>
+                      <td>
+                        <span class="badge" :class="u.is_admin ? 'badge-red' : 'badge-gray'"
+                              x-text="u.is_admin ? '🔑 Admin' : 'Cliente'"></span>
+                      </td>
+                      <td style="color:var(--text-3);font-size:0.85rem" x-text="formatDate(u.created_at)"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /admin-content -->
+    </main>
+  </div><!-- /admin-root -->
+
+  <!-- ═══════════════════════════════════════════════════════
+       PRODUCT FORM PANEL (slide-in)
+  ═══════════════════════════════════════════════════════ -->
+  <!-- Overlay -->
+  <div class="overlay-bg" x-show="showProductForm" @click="showProductForm=false" style="z-index:299"></div>
+
+  <!-- Panel -->
+  <div class="admin-form-panel" x-show="showProductForm"
+       x-transition:enter="drawer-enter" x-transition:enter-start="drawer-start" x-transition:enter-end="drawer-end"
+       x-transition:leave="drawer-leave" x-transition:leave-to="drawer-leave-to">
+
+    <div class="form-panel-header">
+      <h2 class="form-panel-title">
+        <span x-show="productFormMode==='create'">➕ Nuevo producto</span>
+        <span x-show="productFormMode==='edit'">✏️ Editar producto</span>
+      </h2>
+      <button class="cart-close-btn" @click="showProductForm=false">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="form-panel-body">
+      <!-- Imagen -->
+      <div class="form-group">
+        <label class="form-label">Imagen del producto</label>
+        <div class="image-upload-area" :class="{'has-image': productImagePreview}">
+          <input type="file" accept="image/*" @change="onImageSelected($event)">
+          <img x-show="productImagePreview" :src="productImagePreview" class="image-preview" alt="Vista previa">
+          <div x-show="!productImagePreview">
+            <div class="image-upload-icon">📷</div>
+            <p style="font-family:var(--font-head);font-weight:700;margin-bottom:4px">Haz clic para subir imagen</p>
+            <p style="font-size:0.8rem;color:var(--text-3)">JPG, PNG, WebP · Máximo 4MB</p>
+          </div>
+          <p x-show="productImagePreview" style="font-size:0.8rem;color:var(--text-3);margin-top:var(--sp-sm)">Haz clic para cambiar</p>
+        </div>
+      </div>
+
+      <!-- Nombre + slug -->
+      <div class="form-group">
+        <label class="form-label">Nombre del producto *</label>
+        <input class="form-control" type="text" x-model="productForm.name" placeholder="Torre de encaje Montessori" @input="productFormMode==='create' && autoSlug()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Slug (URL) *</label>
+        <input class="form-control" type="text" x-model="productForm.slug" placeholder="torre-encaje-montessori">
+        <span style="font-size:0.75rem;color:var(--text-3)">/producto/<span x-text="productForm.slug || 'mi-producto'"></span></span>
+      </div>
+
+      <!-- Descripción -->
+      <div class="form-group">
+        <label class="form-label">Descripción corta</label>
+        <textarea class="form-control" rows="2" x-model="productForm.description" placeholder="Breve descripción visible en el catálogo..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripción completa</label>
+        <textarea class="form-control" rows="4" x-model="productForm.long_description" placeholder="Descripción detallada para la página de producto..."></textarea>
+      </div>
+
+      <!-- Precio -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Precio (€) *</label>
+          <input class="form-control" type="number" step="0.01" min="0" x-model="productForm.price" placeholder="29.95">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Precio original (€)</label>
+          <input class="form-control" type="number" step="0.01" min="0" x-model="productForm.compare_price" placeholder="34.95">
+        </div>
+      </div>
+
+      <!-- Categoría -->
+      <div class="form-group">
+        <label class="form-label">Categoría *</label>
+        <select class="form-control" x-model="productForm.category">
+          <option value="juguetes_educativos">🧩 Juguetes Educativos</option>
+          <option value="juegos_mesa">🎲 Juegos de Mesa</option>
+          <option value="decoracion_habitacion">🏡 Decoración Habitación</option>
+          <option value="mobiliario_montessori">🪑 Mobiliario Montessori</option>
+          <option value="puzzles">🧸 Puzzles</option>
+          <option value="construccion">🏗️ Construcción</option>
+          <option value="exterior">🌳 Exterior</option>
+        </select>
+      </div>
+
+      <!-- Edad -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Edad mínima (años)</label>
+          <input class="form-control" type="number" min="0" max="99" x-model="productForm.age_min" placeholder="3">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Edad máxima (años)</label>
+          <input class="form-control" type="number" min="0" max="99" x-model="productForm.age_max" placeholder="99">
+        </div>
+      </div>
+
+      <!-- Stock -->
+      <div class="form-group">
+        <label class="form-label">Stock disponible</label>
+        <input class="form-control" type="number" min="0" x-model="productForm.stock" placeholder="25">
+      </div>
+
+      <!-- Material y dimensiones -->
+      <div class="form-group">
+        <label class="form-label">Material</label>
+        <input class="form-control" type="text" x-model="productForm.material" placeholder="Madera de haya FSC">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Dimensiones</label>
+        <input class="form-control" type="text" x-model="productForm.dimensions" placeholder="40 × 30 × 10 cm">
+      </div>
+
+      <!-- Opciones -->
+      <div class="flex gap-xl">
+        <label class="flex items-center gap-sm" style="cursor:pointer">
+          <input type="checkbox" x-model="productForm.featured" style="width:18px;height:18px">
+          <span style="font-family:var(--font-head);font-weight:700">⭐ Destacado</span>
+        </label>
+        <label class="flex items-center gap-sm" style="cursor:pointer">
+          <input type="checkbox" x-model="productForm.active" style="width:18px;height:18px">
+          <span style="font-family:var(--font-head);font-weight:700">✓ Activo (visible)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="form-panel-footer">
+      <button class="btn btn-ghost" @click="showProductForm=false">Cancelar</button>
+      <button class="btn btn-primary" @click="saveProduct()" :disabled="productFormLoading">
+        <span x-show="!productFormLoading">
+          <span x-show="productFormMode==='create'">Crear producto</span>
+          <span x-show="productFormMode==='edit'">Guardar cambios</span>
+        </span>
+        <span x-show="productFormLoading">Guardando...</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       TOASTS
+  ═══════════════════════════════════════════════════════ -->
+  <div class="toast-container">
+    <template x-for="t in toasts" :key="t.id">
+      <div class="toast" :class="'toast-' + t.type" x-show="t.visible"
+           x-transition:enter="toast-enter" x-transition:enter-from="toast-enter-from" x-transition:enter-to="toast-enter-to"
+           x-transition:leave="toast-leave" x-transition:leave-to="toast-leave-to">
+        <span x-text="t.message"></span>
+      </div>
+    </template>
+  </div>
+
+</div><!-- /x-data -->
+</body>
+</html>

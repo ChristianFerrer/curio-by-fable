@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Curio by Fable — Juguetes de madera para niños</title>
+  <meta name="description" content="Juguetes educativos de madera para niños. Montessori, puzzles, construcción y decoración. Fabricados con madera certificada FSC.">
+  <meta name="theme-color" content="#006CB7">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Curio by Fable — Juguetes de madera">
+  <meta property="og:description" content="Juguetes educativos de madera de alta calidad para niños. Montessori, puzzles, construcción y más.">
+  <meta property="og:type" content="website">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Supabase JS (UMD) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+  <!-- Alpine.js (defer — must load after our app.js) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- Config (debe cargarse antes que app.js) -->
+  <script src="/public/config.js"></script>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="/src/css/main.css">
+  <link rel="stylesheet" href="/src/css/components.css">
+  <link rel="stylesheet" href="/src/css/animations.css">
+
+  <!-- App JS (ES module) -->
+  <script type="module" src="/src/js/app.js"></script>
+</head>
+<body>
+<div x-data="app" x-cloak>
+
+  <!-- ═══════════════════════════════════════════════════════
+       NAVIGATION
+  ═══════════════════════════════════════════════════════ -->
+  <nav class="site-nav" :class="{ 'nav-scrolled': navScrolled }">
+    <div class="nav-inner">
+      <!-- Logo -->
+      <a href="#/" class="nav-logo">
+        <span class="logo-curio">Curio</span>
+        <span class="logo-by">by</span>
+        <span class="logo-fable">Fable</span>
+      </a>
+
+      <!-- Desktop nav links -->
+      <div class="nav-links">
+        <div class="mega-menu-trigger" @mouseenter="megaMenuOpen=true" @mouseleave="megaMenuOpen=false">
+          <button class="nav-link">Tienda ▾</button>
+          <div class="mega-menu" x-show="megaMenuOpen"
+               x-transition:enter="slide-down" x-transition:enter-start="slide-down" x-transition:enter-end="slide-down"
+               @click.outside="megaMenuOpen=false">
+            <a href="#/catalogo" class="mega-menu-item">🛍️ Todos los productos</a>
+            <template x-for="cat in categories" :key="cat.id">
+              <a :href="'#/catalogo?category=' + cat.slug" class="mega-menu-item">
+                <span x-text="cat.icon"></span>
+                <span x-text="cat.name"></span>
+              </a>
+            </template>
+          </div>
+        </div>
+        <a href="#/catalogo" class="nav-link">Catálogo</a>
+        <a href="#/" class="nav-link">Nosotros</a>
+      </div>
+
+      <!-- Nav actions -->
+      <div class="nav-actions">
+        <!-- Search -->
+        <div class="flex items-center gap-sm hide-mobile">
+          <div style="position:relative">
+            <input type="text" placeholder="Buscar..." class="form-control" style="width:220px;padding-left:36px;padding-top:7px;padding-bottom:7px;"
+                   x-model="searchQuery" @keydown.enter="searchProducts()" @keydown.escape="searchQuery=''">
+            <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--text-3);pointer-events:none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          </div>
+        </div>
+
+        <!-- Cart -->
+        <button class="nav-icon-btn" @click="cartOpen=true" title="Carrito">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
+          <span class="cart-badge" x-show="cartCount>0" x-text="cartCount"></span>
+        </button>
+
+        <!-- Auth -->
+        <template x-if="!user">
+          <button class="btn btn-primary btn-sm" @click="openLogin()">Entrar</button>
+        </template>
+        <template x-if="user">
+          <div class="flex items-center gap-sm">
+            <button class="nav-icon-btn" @click="navigate('/perfil')" title="Mi cuenta">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Mobile bottom nav -->
+  <nav class="mobile-nav-bar">
+    <div class="nav-items">
+      <button class="mobile-nav-item" :class="{active:currentView==='home'}" @click="navigate('/')">
+        <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        Inicio
+      </button>
+      <button class="mobile-nav-item" :class="{active:currentView==='catalog'}" @click="navigate('/catalogo')">
+        <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+        Tienda
+      </button>
+      <button class="mobile-nav-item" style="position:relative" @click="cartOpen=true">
+        <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
+        <span class="cart-badge" x-show="cartCount>0" x-text="cartCount"></span>
+        Carrito
+      </button>
+      <button class="mobile-nav-item" :class="{active:currentView==='profile'}" @click="user ? navigate('/perfil') : openLogin()">
+        <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+        <span x-text="user ? 'Mi cuenta' : 'Entrar'"></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════════════════
+       HOME VIEW
+  ═══════════════════════════════════════════════════════ -->
+  <div x-show="currentView==='home'">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="hero-eyebrow">🌿 Madera certificada FSC · Hecho con amor</div>
+          <h1 class="hero-title">
+            Juguetes de <span class="accent-blue">madera</span> que
+            <span class="accent-red">inspiran</span> a los niños
+          </h1>
+          <p class="hero-desc">
+            Diseñados para estimular la creatividad, el aprendizaje y el juego libre.
+            Cada pieza, artesanal y pensada para crecer con tu hijo.
+          </p>
+          <div class="hero-actions">
+            <a href="#/catalogo" class="btn btn-primary btn-lg">🛍️ Ver catálogo</a>
+            <a href="#/catalogo?category=juguetes-educativos" class="btn btn-outline btn-lg">Montessori</a>
+          </div>
+        </div>
+        <div class="hero-image">
+          <img src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80" alt="Juguetes de madera Curio by Fable" loading="eager">
+        </div>
+      </div>
+      <div class="hero-trust">
+        <div class="trust-item"><span class="trust-icon">🌳</span> Madera FSC certificada</div>
+        <div class="trust-item"><span class="trust-icon">🛡️</span> Norma EN71 · CE</div>
+        <div class="trust-item"><span class="trust-icon">🚚</span> Envío gratis +50€</div>
+        <div class="trust-item"><span class="trust-icon">↩️</span> 30 días de devolución</div>
+      </div>
+    </section>
+
+    <!-- Categorías -->
+    <section style="padding:var(--sp-4xl) 0" class="container">
+      <div class="section-header reveal">
+        <div>
+          <h2 class="section-title">Explora por <span>categoría</span></h2>
+          <p class="section-subtitle">Encuentra el regalo perfecto para cada edad y momento</p>
+        </div>
+      </div>
+      <div class="categories-grid">
+        <template x-for="cat in categories" :key="cat.id">
+          <a :href="'#/catalogo?category=' + cat.slug" class="category-card reveal">
+            <span class="category-icon" x-text="cat.icon"></span>
+            <span class="category-name" x-text="cat.name"></span>
+          </a>
+        </template>
+      </div>
+    </section>
+
+    <!-- Productos Destacados -->
+    <section style="padding:var(--sp-xl) 0 var(--sp-4xl)" class="container">
+      <div class="section-header reveal">
+        <div>
+          <h2 class="section-title">Productos <span>destacados</span></h2>
+          <p class="section-subtitle">Los más queridos por nuestras familias</p>
+        </div>
+        <a href="#/catalogo" class="btn btn-ghost btn-sm hide-mobile">Ver todos →</a>
+      </div>
+
+      <!-- Skeleton mientras carga -->
+      <div class="products-grid" x-show="!featuredProducts.length">
+        <template x-for="i in 8">
+          <div class="product-card product-card-skeleton">
+            <div class="product-card-image skeleton"></div>
+            <div class="product-card-body" style="gap:8px">
+              <div class="skel-block skeleton" style="height:12px;width:60%"></div>
+              <div class="skel-block skeleton" style="height:16px;width:90%"></div>
+              <div class="skel-block skeleton" style="height:16px;width:70%"></div>
+              <div class="skel-block skeleton" style="height:20px;width:40%;margin-top:8px"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div class="products-grid" x-show="featuredProducts.length">
+        <template x-for="product in featuredProducts" :key="product.id">
+          <div class="product-card reveal" @click="navigate('/producto/' + product.slug)">
+            <div class="product-card-image">
+              <img :src="product.images?.[0] || 'https://via.placeholder.com/400x400?text=Curio'" :alt="product.name" loading="lazy">
+              <div class="product-badges">
+                <span class="product-badge badge-featured" x-show="product.featured">⭐ Destacado</span>
+                <span class="product-badge badge-sale" x-show="product.compare_price > product.price" x-text="'-' + discountPct(product.price, product.compare_price) + '%'"></span>
+              </div>
+              <button class="product-quick-add" @click.stop="addToCart(product, 1)" title="Añadir al carrito">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              </button>
+            </div>
+            <div class="product-card-body">
+              <span class="product-card-category" x-text="formatCategory(product.category)"></span>
+              <h3 class="product-card-name" x-text="product.name"></h3>
+              <span class="product-card-age" x-text="formatAge(product.age_min, product.age_max)"></span>
+              <div class="product-card-footer">
+                <div>
+                  <span class="product-price" x-text="formatPrice(product.price)"></span>
+                  <span class="product-compare-price" x-show="product.compare_price" x-text="formatPrice(product.compare_price)"></span>
+                </div>
+                <span class="badge badge-green" x-show="product.stock > 0">En stock</span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- Features strip -->
+    <section style="padding:var(--sp-2xl) 0;background:var(--surface-2)">
+      <div class="container">
+        <div class="features-strip">
+          <div class="feature-item reveal">
+            <div class="feature-icon">🌿</div>
+            <h3 class="feature-title">100% Sostenible</h3>
+            <p class="feature-desc">Madera de bosques gestionados de forma responsable, certificada FSC.</p>
+          </div>
+          <div class="feature-item reveal reveal-delay-1">
+            <div class="feature-icon">🎨</div>
+            <h3 class="feature-title">Pinturas no tóxicas</h3>
+            <p class="feature-desc">Tintes al agua seguros para los más pequeños. Cumplen norma EN71.</p>
+          </div>
+          <div class="feature-item reveal reveal-delay-2">
+            <div class="feature-icon">🧠</div>
+            <h3 class="feature-title">Aprendizaje activo</h3>
+            <p class="feature-desc">Cada juguete estimula habilidades cognitivas, motoras y creativas.</p>
+          </div>
+          <div class="feature-item reveal reveal-delay-3">
+            <div class="feature-icon">♻️</div>
+            <h3 class="feature-title">Para toda la vida</h3>
+            <p class="feature-desc">Fabricados para durar generaciones. Madera resistente y acabados premium.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Newsletter -->
+    <section style="padding:var(--sp-4xl) 0" class="container">
+      <div class="newsletter-section reveal">
+        <h2 class="newsletter-title">🎁 Únete a la familia Curio</h2>
+        <p class="newsletter-desc">Recibe inspiración, novedades y ofertas exclusivas para los que aman jugar bien.</p>
+        <div x-show="!newsletterDone">
+          <div class="newsletter-form">
+            <input type="email" class="newsletter-input" placeholder="tu@email.com"
+                   x-model="newsletterEmail" @keydown.enter="subscribeNewsletter()">
+            <button class="btn btn-yellow" @click="subscribeNewsletter()" :disabled="newsletterLoading">
+              <span x-show="!newsletterLoading">Suscribirme</span>
+              <span x-show="newsletterLoading">...</span>
+            </button>
+          </div>
+          <p style="margin-top:12px;font-size:0.8rem;opacity:0.7">Sin spam, te lo prometemos. Puedes darte de baja cuando quieras.</p>
+        </div>
+        <div x-show="newsletterDone" style="font-size:1.25rem;font-family:var(--font-head);font-weight:900">
+          ✅ ¡Gracias por unirte! Pronto tendrás noticias nuestras.
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       CATALOG VIEW
+  ═══════════════════════════════════════════════════════ -->
+  <div x-show="currentView==='catalog'" class="container page-wrapper">
+    <div class="catalog-layout">
+      <!-- Sidebar filtros -->
+      <aside class="catalog-filters">
+        <div class="filter-section">
+          <h3 class="filter-title">Categoría</h3>
+          <div class="filter-options">
+            <div class="filter-option" :class="{active:!filters.category}" @click="setFilter('category','')">
+              <span>Todas las categorías</span>
+            </div>
+            <template x-for="cat in categories" :key="cat.id">
+              <div class="filter-option" :class="{active:filters.category===cat.slug}" @click="setFilter('category', cat.slug)">
+                <span x-text="cat.icon"></span>
+                <span x-text="cat.name"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+        <hr class="divider">
+        <div class="filter-section">
+          <h3 class="filter-title">Ordenar por</h3>
+          <div class="filter-chip-row">
+            <button class="filter-chip" :class="{active:filters.sort==='newest'}"  @click="setFilter('sort','newest')">Novedades</button>
+            <button class="filter-chip" :class="{active:filters.sort==='price_asc'}" @click="setFilter('sort','price_asc')">Precio ↑</button>
+            <button class="filter-chip" :class="{active:filters.sort==='price_desc'}" @click="setFilter('sort','price_desc')">Precio ↓</button>
+            <button class="filter-chip" :class="{active:filters.sort==='featured'}" @click="setFilter('sort','featured')">Destacados</button>
+          </div>
+        </div>
+        <hr class="divider">
+        <button class="btn btn-ghost btn-sm btn-full" @click="clearFilters()">✕ Limpiar filtros</button>
+      </aside>
+
+      <!-- Productos -->
+      <div>
+        <!-- Toolbar -->
+        <div class="catalog-toolbar">
+          <span class="results-count" x-text="productsLoading ? 'Cargando...' : productsTotal + ' productos encontrados'"></span>
+          <div class="flex items-center gap-sm">
+            <div style="position:relative">
+              <input type="text" placeholder="Buscar..." class="form-control" style="width:200px;padding-left:32px;padding-top:7px;padding-bottom:7px;"
+                     x-model="filters.search" @input.debounce.400ms="loadProducts(1)">
+              <svg style="position:absolute;left:8px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--text-3);pointer-events:none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Grid productos -->
+        <div class="products-grid" x-show="!productsLoading && products.length">
+          <template x-for="product in products" :key="product.id">
+            <div class="product-card" @click="navigate('/producto/' + product.slug)">
+              <div class="product-card-image">
+                <img :src="product.images?.[0] || 'https://via.placeholder.com/400x400?text=Curio'" :alt="product.name" loading="lazy">
+                <div class="product-badges">
+                  <span class="product-badge badge-sale" x-show="product.compare_price > product.price" x-text="'-' + discountPct(product.price, product.compare_price) + '%'"></span>
+                </div>
+                <button class="product-quick-add" @click.stop="addToCart(product, 1)" title="Añadir al carrito">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                </button>
+              </div>
+              <div class="product-card-body">
+                <span class="product-card-category" x-text="formatCategory(product.category)"></span>
+                <h3 class="product-card-name" x-text="product.name"></h3>
+                <span class="product-card-age" x-text="formatAge(product.age_min, product.age_max)"></span>
+                <div class="product-card-footer">
+                  <div>
+                    <span class="product-price" x-text="formatPrice(product.price)"></span>
+                    <span class="product-compare-price" x-show="product.compare_price" x-text="formatPrice(product.compare_price)"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Empty state -->
+        <div x-show="!productsLoading && !products.length" style="text-align:center;padding:var(--sp-4xl) 0;color:var(--text-3)">
+          <div style="font-size:3rem;margin-bottom:var(--sp-md)">🔍</div>
+          <h3 style="font-family:var(--font-head);font-weight:800;margin-bottom:var(--sp-sm)">Sin resultados</h3>
+          <p>Prueba con otros filtros o <button class="btn btn-outline btn-sm" @click="clearFilters()">ver todos los productos</button></p>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="productsLoading" class="spinner"></div>
+
+        <!-- Paginación -->
+        <div class="pagination" x-show="productsTotalPages > 1 && !productsLoading">
+          <button class="page-btn" @click="loadProducts(productsPage-1)" :disabled="productsPage<=1">‹</button>
+          <template x-for="p in productsTotalPages" :key="p">
+            <button class="page-btn" :class="{current: p===productsPage}" @click="loadProducts(p)" x-text="p"></button>
+          </template>
+          <button class="page-btn" @click="loadProducts(productsPage+1)" :disabled="productsPage>=productsTotalPages">›</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PRODUCT DETAIL VIEW
+  ═══════════════════════════════════════════════════════ -->
+  <div x-show="currentView==='product'" class="container page-wrapper">
+    <!-- Breadcrumb -->
+    <nav style="margin-bottom:var(--sp-xl);font-size:0.875rem;color:var(--text-3)">
+      <a href="#/" @click.prevent="navigate('/')" style="color:var(--text-3)">Inicio</a> /
+      <a href="#/catalogo" @click.prevent="navigate('/catalogo')" style="color:var(--text-3)">Tienda</a>
+      <span x-show="currentProduct"> / <span x-text="currentProduct?.name" style="color:var(--text-2)"></span></span>
+    </nav>
+
+    <!-- Loading state -->
+    <div x-show="currentProductLoading" class="spinner"></div>
+
+    <!-- Product detail -->
+    <div class="product-detail" x-show="currentProduct && !currentProductLoading">
+      <!-- Galería -->
+      <div class="product-gallery">
+        <div class="product-main-img">
+          <img :src="currentProduct?.images?.[selectedImageIdx] || currentProduct?.images?.[0]" :alt="currentProduct?.name" loading="lazy">
+        </div>
+        <div class="product-thumbs" x-show="currentProduct?.images?.length > 1">
+          <template x-for="(img, idx) in (currentProduct?.images || [])" :key="idx">
+            <div class="product-thumb" :class="{active: idx===selectedImageIdx}" @click="selectedImageIdx=idx">
+              <img :src="img" :alt="'Imagen ' + (idx+1)" loading="lazy">
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Info -->
+      <div class="product-info">
+        <p class="product-info-eyebrow" x-text="formatCategory(currentProduct?.category)"></p>
+        <h1 class="product-info-title" x-text="currentProduct?.name"></h1>
+
+        <div class="product-info-price">
+          <span class="price-main" x-text="formatPrice(currentProduct?.price)"></span>
+          <span class="price-compare" x-show="currentProduct?.compare_price" x-text="formatPrice(currentProduct?.compare_price)"></span>
+          <span class="price-save" x-show="currentProduct?.compare_price > currentProduct?.price"
+                x-text="'-' + discountPct(currentProduct?.price, currentProduct?.compare_price) + '%'"></span>
+        </div>
+
+        <p style="color:var(--text-2);line-height:1.7;margin-bottom:var(--sp-lg)" x-text="currentProduct?.description"></p>
+
+        <!-- Meta -->
+        <div class="product-meta-list">
+          <div class="meta-item">
+            <span class="meta-label">Edad recomendada</span>
+            <span class="meta-value" x-text="formatAge(currentProduct?.age_min, currentProduct?.age_max)"></span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Material</span>
+            <span class="meta-value" x-text="currentProduct?.material || 'Madera maciza'"></span>
+          </div>
+          <div class="meta-item" x-show="currentProduct?.dimensions">
+            <span class="meta-label">Dimensiones</span>
+            <span class="meta-value" x-text="currentProduct?.dimensions"></span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Disponibilidad</span>
+            <span class="meta-value" :style="(currentProduct?.stock||0)>0 ? 'color:var(--success)' : 'color:var(--red)'"
+                  x-text="(currentProduct?.stock||0)>0 ? '✓ En stock (' + currentProduct?.stock + ' uds)' : '✗ Sin stock'"></span>
+          </div>
+        </div>
+
+        <!-- Cantidad -->
+        <div class="qty-selector" x-show="(currentProduct?.stock||0)>0">
+          <label>Cantidad:</label>
+          <button class="qty-btn" @click="selectedQty>1 && selectedQty--">−</button>
+          <span class="qty-display" x-text="selectedQty"></span>
+          <button class="qty-btn" @click="selectedQty < (currentProduct?.stock||0) && selectedQty++">+</button>
+        </div>
+
+        <!-- Acciones -->
+        <div class="product-actions">
+          <button class="btn btn-primary btn-lg"
+                  :disabled="!(currentProduct?.stock>0)"
+                  @click="addToCart(currentProduct, selectedQty)">
+            🛒 Añadir al carrito
+          </button>
+          <button class="btn btn-outline btn-lg" @click="navigate('/checkout')" x-show="cartCount>0">
+            Ir al carrito (
+            <span x-text="cartCount"></span>)
+          </button>
+        </div>
+
+        <!-- Descripción larga -->
+        <div class="product-description" x-show="currentProduct?.long_description">
+          <h3>Descripción</h3>
+          <p x-text="currentProduct?.long_description"></p>
+        </div>
+
+        <!-- Badges certificaciones -->
+        <div class="flex gap-sm flex-wrap mt-lg">
+          <span class="badge badge-green">🌿 FSC Certificado</span>
+          <span class="badge badge-blue">🛡️ Norma EN71</span>
+          <span class="badge badge-wood">🎨 Pinturas seguras</span>
+          <span class="badge badge-gray">🚚 Envío gratis +50€</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Productos relacionados -->
+    <div x-show="currentProduct?.related?.length" style="margin-top:var(--sp-4xl)">
+      <h2 class="section-title" style="margin-bottom:var(--sp-xl)">También te puede gustar</h2>
+      <div class="products-grid">
+        <template x-for="product in (currentProduct?.related || [])" :key="product.id">
+          <div class="product-card" @click="navigate('/producto/' + product.slug)">
+            <div class="product-card-image">
+              <img :src="product.images?.[0] || 'https://via.placeholder.com/400x400'" :alt="product.name" loading="lazy">
+            </div>
+            <div class="product-card-body">
+              <span class="product-card-category" x-text="formatCategory(product.category)"></span>
+              <h3 class="product-card-name" x-text="product.name"></h3>
+              <div class="product-card-footer">
+                <span class="product-price" x-text="formatPrice(product.price)"></span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       CART VIEW (mobile full page)
+  ═══════════════════════════════════════════════════════ -->
+  <div x-show="currentView==='cart'" class="container page-wrapper">
+    <h1 class="section-title" style="margin-bottom:var(--sp-xl)">🛒 Tu carrito</h1>
+    <div x-show="!cartItems.length" style="text-align:center;padding:var(--sp-4xl) 0;color:var(--text-3)">
+      <div style="font-size:4rem;margin-bottom:var(--sp-md)">🛒</div>
+      <h3 style="font-family:var(--font-head);font-weight:800;margin-bottom:var(--sp-md)">Tu carrito está vacío</h3>
+      <a href="#/catalogo" class="btn btn-primary">Explorar productos</a>
+    </div>
+    <div class="grid-2" style="gap:var(--sp-xl)" x-show="cartItems.length">
+      <div>
+        <template x-for="item in cartItems" :key="item.product_id">
+          <div class="cart-item" style="border-bottom:1px solid var(--border);padding:var(--sp-md) 0">
+            <img class="cart-item-img" :src="item.image_url || 'https://via.placeholder.com/72'" :alt="item.name">
+            <div class="cart-item-info">
+              <div class="cart-item-name" x-text="item.name"></div>
+              <div class="cart-item-price" x-text="formatPrice(item.price)"></div>
+              <div class="cart-item-qty">
+                <button class="qty-btn" @click="decrementQty(item.product_id)">−</button>
+                <span class="qty-display" x-text="item.quantity"></span>
+                <button class="qty-btn" @click="incrementQty(item.product_id)">+</button>
+              </div>
+            </div>
+            <button class="cart-item-remove" @click="removeFromCart(item.product_id)">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </template>
+      </div>
+      <div class="checkout-summary">
+        <h3 class="checkout-summary-title">Resumen del pedido</h3>
+        <div class="cart-summary-row"><span>Subtotal</span><span x-text="formatPrice(cartSubtotal)"></span></div>
+        <div class="cart-summary-row"><span>Envío</span>
+          <span x-show="cartShipping===0" style="color:var(--success);font-weight:700">🎉 Gratis</span>
+          <span x-show="cartShipping>0" x-text="formatPrice(cartShipping)"></span>
+        </div>
+        <div class="free-shipping-note" x-show="cartShipping>0">¡Añade <span x-text="formatPrice(50-cartSubtotal)"></span> más para envío gratis!</div>
+        <div class="cart-summary-row total"><span>Total</span><span x-text="formatPrice(cartTotal)"></span></div>
+        <button class="btn btn-primary btn-full btn-lg" style="margin-top:var(--sp-md)" @click="goToCheckout()">Finalizar compra</button>
+        <a href="#/catalogo" class="btn btn-ghost btn-full" style="margin-top:var(--sp-sm)">Seguir comprando</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       CHECKOUT VIEW
+  ═══════════════════════════════════════════════════════ -->
+  <div x-show="currentView==='checkout'" class="container page-wrapper">
+    <h1 class="section-title" style="margin-bottom:var(--sp-xl)">Finalizar compra</h1>
+
+    <!-- Step indicator -->
+    <div class="flex items-center gap-md" style="margin-bottom:var(--sp-xl)">
+      <div class="badge" :class="checkoutStep>=1 ? 'badge-blue' : 'badge-gray'">1 · Dirección</div>
+      <div style="flex:1;height:2px;background:var(--border)"></div>
+      <div class="badge" :class="checkoutStep>=2 ? 'badge-blue' : 'badge-gray'">2 · Confirmar</div>
+    </div>
+
+    <div class="checkout-layout">
+      <!-- Form -->
+      <div>
+        <!-- Step 1: Dirección -->
+        <div x-show="checkoutStep===1">
+          <div class="admin-card">
+            <div class="admin-card-header"><h3 class="admin-card-title">📦 Dirección de envío</h3></div>
+            <div style="padding:var(--sp-xl)">
+              <div style="display:flex;flex-direction:column;gap:var(--sp-md)">
+                <div class="form-group">
+                  <label class="form-label">Nombre completo *</label>
+                  <input class="form-control" type="text" x-model="shippingForm.full_name" placeholder="María García López">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Dirección *</label>
+                  <input class="form-control" type="text" x-model="shippingForm.address_line1" placeholder="Calle Mayor, 23, 2º B">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Piso, puerta (opcional)</label>
+                  <input class="form-control" type="text" x-model="shippingForm.address_line2" placeholder="Escalera 2, Ático">
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Ciudad *</label>
+                    <input class="form-control" type="text" x-model="shippingForm.city" placeholder="Madrid">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Provincia</label>
+                    <input class="form-control" type="text" x-model="shippingForm.province" placeholder="Madrid">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Código postal *</label>
+                    <input class="form-control" type="text" x-model="shippingForm.postal_code" placeholder="28001" maxlength="5">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Teléfono *</label>
+                    <input class="form-control" type="tel" x-model="shippingForm.phone" placeholder="+34 600 000 000">
+                  </div>
+                </div>
+                <button class="btn btn-primary btn-lg" @click="goToConfirm()">Continuar →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Confirmar -->
+        <div x-show="checkoutStep===2">
+          <div class="admin-card" style="margin-bottom:var(--sp-lg)">
+            <div class="admin-card-header">
+              <h3 class="admin-card-title">📋 Resumen del pedido</h3>
+              <button class="btn btn-ghost btn-sm" @click="checkoutStep=1">← Editar dirección</button>
+            </div>
+            <div style="padding:var(--sp-lg)">
+              <template x-for="item in cartItems" :key="item.product_id">
+                <div class="cart-item">
+                  <img class="cart-item-img" :src="item.image_url || 'https://via.placeholder.com/72'" :alt="item.name">
+                  <div class="cart-item-info">
+                    <div class="cart-item-name" x-text="item.name"></div>
+                    <div style="font-size:0.85rem;color:var(--text-3)">Cantidad: <span x-text="item.quantity"></span></div>
+                    <div class="cart-item-price" x-text="formatPrice(item.price * item.quantity)"></div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="admin-card" style="margin-bottom:var(--sp-lg);padding:var(--sp-lg)">
+            <h4 style="font-family:var(--font-head);font-weight:800;margin-bottom:var(--sp-md)">📦 Dirección de entrega</h4>
+            <p style="color:var(--text-2)" x-text="shippingForm.full_name"></p>
+            <p style="color:var(--text-2)" x-text="shippingForm.address_line1"></p>
+            <p style="color:var(--text-2)" x-text="shippingForm.city + ', ' + shippingForm.postal_code"></p>
+            <p style="color:var(--text-2)" x-text="shippingForm.phone"></p>
+          </div>
+
+          <div style="background:var(--yellow-light);border:2px solid var(--yellow);border-radius:var(--r-md);padding:var(--sp-md);margin-bottom:var(--sp-lg);font-family:var(--font-head);font-size:0.9rem">
+            💳 <strong>Pago:</strong> Esta es una demo. No se procesará ningún cargo real.
+          </div>
+
+          <button class="btn btn-primary btn-xl btn-full" @click="submitOrder()" :disabled="checkoutLoading">
+            <span x-show="!checkoutLoading">✅ Confirmar pedido — <span x-text="formatPrice(cartTotal)"></span></span>
+            <span x-show="checkoutLoading">Procesando...</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Resumen lateral -->
+      <div class="checkout-summary">
+        <h3 class="checkout-summary-title">Tu pedido</h3>
+        <template x-for="item in cartItems" :key="item.product_id">
+          <div style="display:flex;justify-content:space-between;font-size:0.875rem;margin-bottom:var(--sp-sm)">
+            <span x-text="item.name + ' ×' + item.quantity" style="color:var(--text-2);flex:1;padding-right:var(--sp-sm)"></span>
+            <span style="font-weight:700;font-family:var(--font-head)" x-text="formatPrice(item.price * item.quantity)"></span>
+          </div>
+        </template>
+        <div class="cart-summary-row" style="margin-top:var(--sp-md)"><span>Subtotal</span><span x-text="formatPrice(cartSubtotal)"></span></div>
+        <div class="cart-summary-row">
+          <span>Envío</span>
+          <span x-show="cartShipping===0" style="color:var(--success);font-weight:700">Gratis</span>
+          <span x-show="cartShipping>0" x-text="formatPrice(cartShipping)"></span>
+        </div>
+        <div class="cart-summary-row total"><span>Total</span><span x-text="formatPrice(cartTotal)"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       ORDER SUCCESS VIEW
+  ═══════════════════════════════════════════════════════ -->
+  <div x-show="currentView==='order-success'" class="container page-wrapper" style="text-align:center;padding-top:var(--sp-4xl)">
+    <div style="font-size:5rem;margin-bottom:var(--sp-lg)" class="pop">🎉</div>
+    <h1 style="font-family:var(--font-head);font-weight:900;font-size:2.5rem;margin-bottom:var(--sp-md)">¡Pedido confirmado!</h1>
+    <p style="color:var(--text-2);font-size:1.1rem;margin-bottom:var(--sp-sm)">Gracias por tu compra. Recibirás un email de confirmación pronto.</p>
+    <p style="color:var(--text-3);font-size:0.9rem;margin-bottom:var(--sp-2xl)">Número de pedido: <strong style="font-family:var(--font-head)" x-text="lastOrderId"></strong></p>
+    <div class="flex gap-md justify-center flex-wrap">
+      <a href="#/perfil" class="btn btn-primary btn-lg">Ver mis pedidos</a>
+      <a href="#/" class="btn btn-outline btn-lg">Volver al inicio</a>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PROFILE / ORDERS VIEW
+  ═══════════════════════════════════════════════════════ -->
+  <div x-show="currentView==='profile'" class="container page-wrapper" x-init="user && loadOrders()">
+    <div class="flex items-center justify-between" style="margin-bottom:var(--sp-xl)">
+      <div>
+        <h1 class="section-title">Mi cuenta</h1>
+        <p style="color:var(--text-2);margin-top:4px" x-text="user?.email"></p>
+      </div>
+      <button class="btn btn-ghost" @click="logout()">Cerrar sesión</button>
+    </div>
+
+    <h2 style="font-family:var(--font-head);font-weight:800;font-size:1.25rem;margin-bottom:var(--sp-lg)">Mis pedidos</h2>
+    <div x-show="ordersLoading" class="spinner"></div>
+    <div x-show="!ordersLoading && !userOrders.length" style="text-align:center;padding:var(--sp-2xl);color:var(--text-3)">
+      <p>Aún no tienes pedidos. <a href="#/catalogo" style="color:var(--blue);font-weight:700">¡Descubre nuestros productos!</a></p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:var(--sp-lg)" x-show="userOrders.length">
+      <template x-for="order in userOrders" :key="order.id">
+        <div class="order-card">
+          <div class="order-card-header">
+            <div>
+              <p style="font-size:0.8rem;color:var(--text-3)">Pedido #<span x-text="order.id.slice(0,8)"></span></p>
+              <p style="font-size:0.85rem;color:var(--text-2);margin-top:2px" x-text="formatDate(order.created_at)"></p>
+            </div>
+            <span class="status-badge" :class="'status-' + order.status" x-text="formatStatus(order.status)"></span>
+            <span style="font-family:var(--font-head);font-weight:900;color:var(--blue)" x-text="formatPrice(order.total)"></span>
+          </div>
+          <div class="order-card-body">
+            <template x-for="item in (order.order_items||[])" :key="item.id">
+              <div class="order-item-row">
+                <img class="order-item-img" :src="item.product_snapshot?.image_url || 'https://via.placeholder.com/56'" :alt="item.product_snapshot?.name">
+                <div>
+                  <p style="font-weight:700;font-family:var(--font-head);font-size:0.9rem" x-text="item.product_snapshot?.name"></p>
+                  <p style="font-size:0.8rem;color:var(--text-3)">×<span x-text="item.quantity"></span> · <span x-text="formatPrice(item.unit_price)"></span></p>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       CART DRAWER
+  ═══════════════════════════════════════════════════════ -->
+  <div class="cart-overlay" x-show="cartOpen" @click="cartOpen=false"
+       x-transition:enter="overlay-enter" x-transition:enter-from="overlay-enter-from" x-transition:enter-to="overlay-enter-to"
+       x-transition:leave="overlay-leave" x-transition:leave-to="overlay-leave-to"></div>
+
+  <aside class="cart-drawer" x-show="cartOpen"
+         x-transition:enter="drawer-enter" x-transition:enter-start="drawer-start" x-transition:enter-end="drawer-end"
+         x-transition:leave="drawer-leave" x-transition:leave-to="drawer-leave-to">
+    <div class="cart-drawer-header">
+      <span class="cart-drawer-title">
+        <svg style="width:22px;height:22px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
+        Carrito
+        <span class="badge badge-blue" x-show="cartCount>0" x-text="cartCount + ' uds'"></span>
+      </span>
+      <button class="cart-close-btn" @click="cartOpen=false">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="cart-drawer-body">
+      <div class="cart-empty" x-show="!cartItems.length">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
+        <p style="font-family:var(--font-head);font-weight:800">Tu carrito está vacío</p>
+        <button class="btn btn-primary" @click="cartOpen=false;navigate('/catalogo')">Explorar tienda</button>
+      </div>
+      <template x-for="item in cartItems" :key="item.product_id">
+        <div class="cart-item">
+          <img class="cart-item-img" :src="item.image_url || 'https://via.placeholder.com/72'" :alt="item.name">
+          <div class="cart-item-info">
+            <div class="cart-item-name" x-text="item.name"></div>
+            <div class="cart-item-price" x-text="formatPrice(item.price)"></div>
+            <div class="cart-item-qty">
+              <button class="qty-btn" @click="decrementQty(item.product_id)">−</button>
+              <span class="qty-display" x-text="item.quantity"></span>
+              <button class="qty-btn" @click="incrementQty(item.product_id)">+</button>
+            </div>
+          </div>
+          <button class="cart-item-remove" @click="removeFromCart(item.product_id)">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </template>
+    </div>
+
+    <div class="cart-drawer-footer" x-show="cartItems.length">
+      <div class="cart-summary-row"><span>Subtotal</span><span x-text="formatPrice(cartSubtotal)"></span></div>
+      <div class="cart-summary-row">
+        <span>Envío</span>
+        <span x-show="cartShipping===0" style="color:var(--success);font-weight:700">🎉 Gratis</span>
+        <span x-show="cartShipping>0" x-text="formatPrice(cartShipping)"></span>
+      </div>
+      <div class="free-shipping-note" x-show="cartShipping>0" x-text="'¡Faltan ' + formatPrice(50-cartSubtotal) + ' para envío gratis!'"></div>
+      <div class="cart-summary-row total"><span>Total</span><span x-text="formatPrice(cartTotal)"></span></div>
+      <button class="btn btn-primary btn-full btn-lg" style="margin-top:var(--sp-md)" @click="goToCheckout()">
+        Finalizar compra →
+      </button>
+      <button class="btn btn-ghost btn-full" style="margin-top:var(--sp-sm)" @click="cartOpen=false">
+        Seguir comprando
+      </button>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════════════════════════════════════════
+       AUTH MODAL
+  ═══════════════════════════════════════════════════════ -->
+  <div class="modal-overlay" x-show="showAuthModal" @click.self="showAuthModal=false"
+       x-transition:enter="overlay-enter" x-transition:enter-from="overlay-enter-from" x-transition:enter-to="overlay-enter-to"
+       x-transition:leave="overlay-leave" x-transition:leave-to="overlay-leave-to">
+    <div class="modal"
+         x-transition:enter="modal-enter" x-transition:enter-from="modal-enter-from" x-transition:enter-to="modal-enter-to"
+         x-transition:leave="modal-leave" x-transition:leave-to="modal-leave-to">
+      <button class="modal-close" @click="showAuthModal=false">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+
+      <h2 class="modal-title">
+        <span x-show="authView==='login'">¡Bienvenido de vuelta! 👋</span>
+        <span x-show="authView==='register'">Crea tu cuenta 🌟</span>
+      </h2>
+      <p class="modal-subtitle">
+        <span x-show="authView==='login'">Inicia sesión para continuar tu compra</span>
+        <span x-show="authView==='register'">Únete a la familia Curio by Fable</span>
+      </p>
+
+      <div class="auth-tabs">
+        <button class="auth-tab" :class="{active:authView==='login'}" @click="authView='login';authError=''">Iniciar sesión</button>
+        <button class="auth-tab" :class="{active:authView==='register'}" @click="authView='register';authError=''">Crear cuenta</button>
+      </div>
+
+      <!-- Login form -->
+      <div x-show="authView==='login'" style="display:flex;flex-direction:column;gap:var(--sp-md)">
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input class="form-control" type="email" x-model="loginEmail" placeholder="tu@email.com" @keydown.enter="login()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contraseña</label>
+          <input class="form-control" type="password" x-model="loginPassword" placeholder="••••••••" @keydown.enter="login()">
+        </div>
+        <p class="form-error" x-show="authError" x-text="authError"></p>
+        <button class="btn btn-primary btn-full btn-lg" @click="login()" :disabled="authLoading">
+          <span x-show="!authLoading">Iniciar sesión</span>
+          <span x-show="authLoading">Cargando...</span>
+        </button>
+        <div class="divider-text">o continúa con</div>
+        <button class="btn-google" @click="loginWithGoogle()">
+          <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.745 12.27c0-.79-.07-1.54-.19-2.27h-11.3v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"/><path fill="#34A853" d="M12.255 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96h-3.98v3.09C3.515 21.3 7.615 24 12.255 24z"/><path fill="#FBBC05" d="M5.525 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62h-3.98a11.86 11.86 0 000 10.76l3.98-3.09z"/><path fill="#EA4335" d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0c-4.64 0-8.74 2.7-10.71 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"/></svg>
+          Continuar con Google
+        </button>
+      </div>
+
+      <!-- Register form -->
+      <div x-show="authView==='register'" style="display:flex;flex-direction:column;gap:var(--sp-md)">
+        <div class="form-group">
+          <label class="form-label">Nombre completo</label>
+          <input class="form-control" type="text" x-model="registerName" placeholder="María García" @keydown.enter="register()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input class="form-control" type="email" x-model="registerEmail" placeholder="tu@email.com" @keydown.enter="register()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contraseña (mín. 8 caracteres)</label>
+          <input class="form-control" type="password" x-model="registerPassword" placeholder="••••••••" @keydown.enter="register()">
+        </div>
+        <p class="form-error" x-show="authError" x-text="authError"></p>
+        <button class="btn btn-primary btn-full btn-lg" @click="register()" :disabled="authLoading">
+          <span x-show="!authLoading">Crear cuenta</span>
+          <span x-show="authLoading">Registrando...</span>
+        </button>
+        <div class="divider-text">o</div>
+        <button class="btn-google" @click="loginWithGoogle()">
+          <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.745 12.27c0-.79-.07-1.54-.19-2.27h-11.3v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"/><path fill="#34A853" d="M12.255 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96h-3.98v3.09C3.515 21.3 7.615 24 12.255 24z"/><path fill="#FBBC05" d="M5.525 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62h-3.98a11.86 11.86 0 000 10.76l3.98-3.09z"/><path fill="#EA4335" d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0c-4.64 0-8.74 2.7-10.71 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"/></svg>
+          Registrarse con Google
+        </button>
+        <p style="font-size:0.75rem;color:var(--text-3);text-align:center">Al registrarte, aceptas nuestros Términos de servicio y Política de privacidad.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       TOASTS
+  ═══════════════════════════════════════════════════════ -->
+  <div class="toast-container">
+    <template x-for="t in toasts" :key="t.id">
+      <div class="toast" :class="'toast-' + t.type" x-show="t.visible"
+           x-transition:enter="toast-enter" x-transition:enter-from="toast-enter-from" x-transition:enter-to="toast-enter-to"
+           x-transition:leave="toast-leave" x-transition:leave-to="toast-leave-to">
+        <span x-text="t.message"></span>
+      </div>
+    </template>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       FOOTER
+  ═══════════════════════════════════════════════════════ -->
+  <footer class="site-footer" x-show="currentView !== 'checkout'">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="nav-logo">
+          <span class="logo-curio">Curio</span>
+          <span class="logo-by" style="color:rgba(255,255,255,.4)">by</span>
+          <span class="logo-fable">Fable</span>
+        </div>
+        <p class="footer-tagline">Juguetes de madera para niños curiosos.<br>Fabricados con amor y madera FSC.</p>
+      </div>
+      <div>
+        <h4 class="footer-col-title">Tienda</h4>
+        <div class="footer-links">
+          <a href="#/catalogo">Todos los productos</a>
+          <a href="#/catalogo?category=juguetes-educativos">Juguetes educativos</a>
+          <a href="#/catalogo?category=juegos-de-mesa">Juegos de mesa</a>
+          <a href="#/catalogo?category=mobiliario-montessori">Montessori</a>
+        </div>
+      </div>
+      <div>
+        <h4 class="footer-col-title">Información</h4>
+        <div class="footer-links">
+          <a href="#">Sobre nosotros</a>
+          <a href="#">Envíos y devoluciones</a>
+          <a href="#">Política de privacidad</a>
+          <a href="#">Términos de servicio</a>
+        </div>
+      </div>
+      <div>
+        <h4 class="footer-col-title">Contacto</h4>
+        <div class="footer-links">
+          <a href="mailto:hola@curiobyfable.com">hola@curiobyfable.com</a>
+          <a href="#">+34 900 000 000</a>
+          <a href="#">Instagram</a>
+          <a href="#">Pinterest</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2024 Curio by Fable. Todos los derechos reservados.</span>
+      <span>🌿 Comprometidos con el medioambiente</span>
+    </div>
+  </footer>
+
+</div><!-- /x-data -->
+</body>
+</html>
