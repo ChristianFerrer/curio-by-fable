@@ -544,7 +544,11 @@
         </div>
         <div class="free-shipping-note" x-show="cartShipping>0">¡Añade <span x-text="formatPrice(50-cartSubtotal)"></span> más para envío gratis!</div>
         <div class="cart-summary-row total"><span>Total</span><span x-text="formatPrice(cartTotal)"></span></div>
-        <button class="btn btn-primary btn-full btn-lg" style="margin-top:var(--sp-md)" @click="goToCheckout()">Finalizar compra</button>
+        <button class="btn btn-primary btn-full btn-lg" style="margin-top:var(--sp-md)" @click="goToCheckout()">
+          <span x-show="user">Finalizar compra →</span>
+          <span x-show="!user">🔒 Iniciar sesión para comprar</span>
+        </button>
+        <p x-show="!user" style="text-align:center;font-size:0.78rem;color:var(--text-3);margin-top:var(--sp-xs)">Es gratis y solo tarda 30 segundos</p>
         <a href="#/catalogo" class="btn btn-ghost btn-full" style="margin-top:var(--sp-sm)">Seguir comprando</a>
       </div>
     </div>
@@ -784,8 +788,10 @@
       <div class="free-shipping-note" x-show="cartShipping>0" x-text="'¡Faltan ' + formatPrice(50-cartSubtotal) + ' para envío gratis!'"></div>
       <div class="cart-summary-row total"><span>Total</span><span x-text="formatPrice(cartTotal)"></span></div>
       <button class="btn btn-primary btn-full btn-lg" style="margin-top:var(--sp-md)" @click="goToCheckout()">
-        Finalizar compra →
+        <span x-show="user">Finalizar compra →</span>
+        <span x-show="!user">🔒 Iniciar sesión para comprar</span>
       </button>
+      <p x-show="!user" style="text-align:center;font-size:0.78rem;color:var(--text-3);margin-top:var(--sp-xs)">Es gratis y solo tarda 30 segundos</p>
       <button class="btn btn-ghost btn-full" style="margin-top:var(--sp-sm)" @click="cartOpen=false">
         Seguir comprando
       </button>
@@ -806,12 +812,12 @@
       </button>
 
       <h2 class="modal-title">
-        <span x-show="authView==='login'">¡Bienvenido de vuelta! 👋</span>
-        <span x-show="authView==='register'">Crea tu cuenta 🌟</span>
+        <span x-show="authView==='login'" x-text="afterAuthRedirect==='/checkout' ? '¡Casi listo! 🛒' : '¡Bienvenido de vuelta! 👋'"></span>
+        <span x-show="authView==='register'" x-text="afterAuthRedirect==='/checkout' ? 'Crea tu cuenta para comprar 🛒' : 'Crea tu cuenta 🌟'"></span>
       </h2>
       <p class="modal-subtitle">
-        <span x-show="authView==='login'">Inicia sesión para continuar tu compra</span>
-        <span x-show="authView==='register'">Únete a la familia Curio by Fable</span>
+        <span x-show="authView==='login'" x-text="afterAuthRedirect==='/checkout' ? 'Inicia sesión para finalizar tu pedido' : 'Inicia sesión en tu cuenta'"></span>
+        <span x-show="authView==='register'" x-text="afterAuthRedirect==='/checkout' ? 'Solo necesitas una cuenta para comprar — es gratis y rápido' : 'Únete a la familia Curio by Fable'"></span>
       </p>
 
       <div class="auth-tabs">
