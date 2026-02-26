@@ -288,8 +288,13 @@ document.addEventListener('alpine:init', () => {
     // CATEGORIES
     // ════════════════════════════════════════════════════════
     async loadCategories() {
-      const { data } = await supabase.schema('curio').from('categories').select('*').order('sort_order');
-      this.categories = data || [];
+      try {
+        const res  = await fetch('/api/categories');
+        const data = await res.json();
+        this.categories = data.categories || [];
+      } catch (_) {
+        this.categories = [];
+      }
     },
 
     // ════════════════════════════════════════════════════════
