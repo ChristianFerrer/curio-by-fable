@@ -3,6 +3,6 @@
 // Estos valores son seguros para el cliente porque Supabase usa RLS
 
 window.__CURIO_CONFIG__ = {
-  supabaseUrl:  'https://TU_PROYECTO.supabase.co',
-  supabaseAnon: 'TU_ANON_KEY',
+  supabaseUrl:  'https://gboguglxgvdsvzprtigj.supabase.co',
+  supabaseAnon: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdib2d1Z2x4Z3Zkc3Z6cHJ0aWdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDk4NDksImV4cCI6MjA4NzAyNTg0OX0.f1NcwM2D29kD3x-rFxiWH1kK6ME4SD294UxNygGE8-E',
 };
