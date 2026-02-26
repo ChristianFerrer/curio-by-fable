@@ -40,29 +40,29 @@ module.exports = async function handler(req, res) {
       { data: pageViewsByPage },
     ] = await Promise.all([
       // Pedidos
-      supabase.from('orders').select('id', { count: 'exact', head: true }).gte('created_at', todayStart),
-      supabase.from('orders').select('id', { count: 'exact', head: true }).gte('created_at', weekStart),
-      supabase.from('orders').select('id', { count: 'exact', head: true }).gte('created_at', monthStart),
-      supabase.from('orders').select('id', { count: 'exact', head: true }).gte('created_at', prevMonthStart).lt('created_at', monthStart),
+      supabase.schema('curio').from('orders').select('id', { count: 'exact', head: true }).gte('created_at', todayStart),
+      supabase.schema('curio').from('orders').select('id', { count: 'exact', head: true }).gte('created_at', weekStart),
+      supabase.schema('curio').from('orders').select('id', { count: 'exact', head: true }).gte('created_at', monthStart),
+      supabase.schema('curio').from('orders').select('id', { count: 'exact', head: true }).gte('created_at', prevMonthStart).lt('created_at', monthStart),
       // Usuarios
       supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', todayStart),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', weekStart),
       supabase.from('profiles').select('id', { count: 'exact', head: true }),
       // Revenue
-      supabase.from('orders').select('total').gte('created_at', monthStart).neq('status', 'cancelado'),
-      supabase.from('orders').select('total').gte('created_at', prevMonthStart).lt('created_at', monthStart).neq('status', 'cancelado'),
+      supabase.schema('curio').from('orders').select('total').gte('created_at', monthStart).neq('status', 'cancelado'),
+      supabase.schema('curio').from('orders').select('total').gte('created_at', prevMonthStart).lt('created_at', monthStart).neq('status', 'cancelado'),
       // Top productos
-      supabase.from('order_items').select('product_id, quantity, product_snapshot').gte('created_at', monthStart).limit(500),
+      supabase.schema('curio').from('order_items').select('product_id, quantity, product_snapshot').gte('created_at', monthStart).limit(500),
       // Visitas
-      supabase.from('page_views').select('id', { count: 'exact', head: true }).gte('created_at', todayStart),
-      supabase.from('page_views').select('id', { count: 'exact', head: true }).gte('created_at', weekStart),
+      supabase.schema('curio').from('page_views').select('id', { count: 'exact', head: true }).gte('created_at', todayStart),
+      supabase.schema('curio').from('page_views').select('id', { count: 'exact', head: true }).gte('created_at', weekStart),
       // Productos
-      supabase.from('products').select('id', { count: 'exact', head: true }).eq('active', true),
-      supabase.from('products').select('id', { count: 'exact', head: true }).eq('active', true).lt('stock', 5),
+      supabase.schema('curio').from('products').select('id', { count: 'exact', head: true }).eq('active', true),
+      supabase.schema('curio').from('products').select('id', { count: 'exact', head: true }).eq('active', true).lt('stock', 5),
       // Pedidos recientes
-      supabase.from('orders').select('id, status, total, created_at, shipping_address').order('created_at', { ascending: false }).limit(10),
+      supabase.schema('curio').from('orders').select('id, status, total, created_at, shipping_address').order('created_at', { ascending: false }).limit(10),
       // Visitas por página
-      supabase.from('page_views').select('page').gte('created_at', weekStart).limit(1000),
+      supabase.schema('curio').from('page_views').select('page').gte('created_at', weekStart).limit(1000),
     ]);
 
     // Calcular revenue

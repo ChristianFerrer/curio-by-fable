@@ -25,7 +25,7 @@ module.exports = async function handler(req, res) {
     const to   = from + pageSize - 1;
 
     let query = supabase
-      .from('orders')
+      .schema('curio').from('orders')
       .select(`
         id, status, subtotal, shipping_cost, total,
         shipping_address, notes, created_at, updated_at, user_id,
@@ -87,7 +87,7 @@ module.exports = async function handler(req, res) {
     }
 
     const { data, error: updateErr } = await supabase
-      .from('orders')
+      .schema('curio').from('orders')
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select()

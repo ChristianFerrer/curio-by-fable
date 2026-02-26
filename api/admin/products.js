@@ -19,7 +19,7 @@ module.exports = async function handler(req, res) {
   // ── GET: Listar todos los productos ─────────────────────
   if (req.method === 'GET') {
     const { data, error } = await supabase
-      .from('products')
+      .schema('curio').from('products')
       .select('id, name, slug, price, compare_price, category, age_min, age_max, stock, images, featured, active, created_at, updated_at, material, dimensions')
       .order('created_at', { ascending: false });
 
@@ -55,7 +55,7 @@ module.exports = async function handler(req, res) {
     }
 
     const { data, error: insertErr } = await supabase
-      .from('products')
+      .schema('curio').from('products')
       .insert({
         name,
         slug:             slug.toLowerCase().replace(/\s+/g, '-'),
@@ -101,7 +101,7 @@ module.exports = async function handler(req, res) {
       const uploadedUrl = await uploadImage(supabase, image_base64, id);
       if (uploadedUrl) {
         // Agregar a imágenes existentes o crear array nuevo
-        const { data: current } = await supabase.from('products').select('images').eq('id', id).single();
+        const { data: current } = await supabase.schema('curio').from('products').select('images').eq('id', id).single();
         fields.images = [uploadedUrl, ...((current?.images || []).filter(u => u !== uploadedUrl))].slice(0, 5);
       }
     }
@@ -117,7 +117,7 @@ module.exports = async function handler(req, res) {
     if (fields.age_max != null) fields.age_max     = parseInt(fields.age_max);
 
     const { data, error: updateErr } = await supabase
-      .from('products')
+      .schema('curio').from('products')
       .update({ ...fields, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select()
@@ -136,7 +136,7 @@ module.exports = async function handler(req, res) {
     if (!id) return res.status(400).json({ error: 'Falta el parámetro id' });
 
     const { error: delErr } = await supabase
-      .from('products')
+      .schema('curio').from('products')
       .update({ active: false, updated_at: new Date().toISOString() })
       .eq('id', id);
 

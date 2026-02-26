@@ -27,7 +27,7 @@ module.exports = async function handler(req, res) {
   const to        = from + pageSize - 1;
 
   let query = supabase
-    .from('products')
+    .schema('curio').from('products')
     .select(
       'id, name, slug, price, compare_price, category, age_min, age_max, images, featured, stock, material',
       { count: 'exact' }

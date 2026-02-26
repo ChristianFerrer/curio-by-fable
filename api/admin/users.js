@@ -41,7 +41,7 @@ module.exports = async function handler(req, res) {
   let orderCounts = {};
   if (userIds.length) {
     const { data: orderData } = await supabase
-      .from('orders')
+      .schema('curio').from('orders')
       .select('user_id')
       .in('user_id', userIds);
 

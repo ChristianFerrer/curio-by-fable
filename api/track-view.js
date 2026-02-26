@@ -23,7 +23,7 @@ module.exports = async function handler(req, res) {
 
   // Insertar sin esperar (fire and forget desde el cliente,
   // pero aquí sí esperamos para poder devolver 200)
-  await supabase.from('page_views').insert({
+  await supabase.schema('curio').from('page_views').insert({
     page:       page.substring(0, 500),
     session_id: session_id || null,
     user_id:    user_id || null,

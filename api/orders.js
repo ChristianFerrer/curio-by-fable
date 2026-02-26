@@ -20,7 +20,7 @@ module.exports = async function handler(req, res) {
   // ── GET: Historial de pedidos ────────────────────────────
   if (req.method === 'GET') {
     const { data, error } = await supabase
-      .from('orders')
+      .schema('curio').from('orders')
       .select(`
         id, status, subtotal, shipping_cost, total, shipping_address, notes, created_at,
         order_items (
@@ -58,7 +58,7 @@ module.exports = async function handler(req, res) {
     // Obtener precios reales desde la BD (nunca confiar en el cliente)
     const productIds = [...new Set(items.map(i => i.product_id))];
     const { data: products, error: prodErr } = await supabase
-      .from('products')
+      .schema('curio').from('products')
       .select('id, name, slug, price, stock, images, active, category')
       .in('id', productIds)
       .eq('active', true);
@@ -101,7 +101,7 @@ module.exports = async function handler(req, res) {
 
     // Insertar pedido
     const { data: order, error: orderErr } = await supabase
-      .from('orders')
+      .schema('curio').from('orders')
       .insert({
         user_id:          user.id,
         subtotal:         Math.round(subtotal * 100) / 100,
@@ -121,7 +121,7 @@ module.exports = async function handler(req, res) {
 
     // Insertar líneas de pedido
     const itemsWithOrderId = orderItems.map(i => ({ ...i, order_id: order.id }));
-    const { error: itemsErr } = await supabase.from('order_items').insert(itemsWithOrderId);
+    const { error: itemsErr } = await supabase.schema('curio').from('order_items').insert(itemsWithOrderId);
     if (itemsErr) {
       console.error('[orders POST] Error insertando items:', itemsErr.message);
     }
@@ -132,7 +132,7 @@ module.exports = async function handler(req, res) {
       if (!product) continue;
       const qty = Math.max(1, parseInt(item.quantity) || 1);
       await supabase
-        .from('products')
+        .schema('curio').from('products')
         .update({ stock: product.stock - qty })
         .eq('id', item.product_id);
     }

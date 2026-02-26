@@ -22,7 +22,7 @@ module.exports = async function handler(req, res) {
 
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
-    .from('newsletter_subscribers')
+    .schema('curio').from('newsletter_subscribers')
     .insert({ email: email.toLowerCase().trim() });
 
   if (error) {

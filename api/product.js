@@ -15,7 +15,7 @@ module.exports = async function handler(req, res) {
   const supabase = getSupabaseAdmin();
 
   const { data, error } = await supabase
-    .from('products')
+    .schema('curio').from('products')
     .select('*')
     .eq('slug', slug)
     .eq('active', true)
@@ -27,7 +27,7 @@ module.exports = async function handler(req, res) {
 
   // Cargar productos relacionados (misma categoría, excluir el actual)
   const { data: related } = await supabase
-    .from('products')
+    .schema('curio').from('products')
     .select('id, name, slug, price, compare_price, images, category')
     .eq('category', data.category)
     .eq('active', true)
