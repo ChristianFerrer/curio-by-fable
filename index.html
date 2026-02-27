@@ -719,7 +719,7 @@
         <div class="mega-menu-trigger" @mouseenter="megaMenuOpen=true" @mouseleave="megaMenuOpen=false">
           <button class="nav-link">Tienda ▾</button>
           <div class="mega-menu" x-show="megaMenuOpen"
-               x-transition:enter="slide-down" x-transition:enter-start="slide-down" x-transition:enter-end="slide-down"
+               
                @click.outside="megaMenuOpen=false">
             <a href="#/catalogo" class="mega-menu-item">🛍️ Todos los productos</a>
             <template x-for="cat in categories" :key="cat.id">
@@ -853,7 +853,7 @@
 
       <!-- Skeleton mientras carga -->
       <div class="products-grid" x-show="!featuredProducts.length">
-        <template x-for="i in 8">
+        <template x-for="i in [1,2,3,4,5,6,7,8]">
           <div class="product-card product-card-skeleton">
             <div class="product-card-image skeleton"></div>
             <div class="product-card-body" style="gap:8px">
@@ -1037,7 +1037,7 @@
         <!-- Paginación -->
         <div class="pagination" x-show="productsTotalPages > 1 && !productsLoading">
           <button class="page-btn" @click="loadProducts(productsPage-1)" :disabled="productsPage<=1">‹</button>
-          <template x-for="p in productsTotalPages" :key="p">
+          <template x-for="p in Array.from({length: productsTotalPages}, function(_, i){ return i+1; })" :key="p">
             <button class="page-btn" :class="{current: p===productsPage}" @click="loadProducts(p)" x-text="p"></button>
           </template>
           <button class="page-btn" @click="loadProducts(productsPage+1)" :disabled="productsPage>=productsTotalPages">›</button>
@@ -1404,8 +1404,8 @@
        x-transition:enter="overlay-enter" x-transition:enter-from="overlay-enter-from" x-transition:enter-to="overlay-enter-to"
        x-transition:leave="overlay-leave" x-transition:leave-to="overlay-leave-to"></div>
 
-  <aside class="cart-drawer" x-show="cartOpen"
-         x-transition:enter="drawer-enter" x-transition:enter-start="drawer-start" x-transition:enter-end="drawer-end"
+  <aside class="cart-drawer" x-show="cartOpen" style="display:none"
+         x-transition:enter="drawer-enter" x-transition:enter-from="drawer-start" x-transition:enter-to="drawer-end"
          x-transition:leave="drawer-leave" x-transition:leave-to="drawer-leave-to">
     <div class="cart-drawer-header">
       <span class="cart-drawer-title">

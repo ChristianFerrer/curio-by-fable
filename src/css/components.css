@@ -481,7 +481,7 @@ select.form-control   { cursor: pointer; }
   width: min(420px, 100vw);
   background: var(--surface);
   z-index: 501;
-  display: flex;
+  display: flex; /* HTML tiene style=display:none por defecto */
   flex-direction: column;
   box-shadow: var(--shadow-xl);
 }
