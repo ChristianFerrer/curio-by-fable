@@ -51,8 +51,8 @@ function initReveal() {
   document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 }
 
-document.addEventListener('alpine:init', () => {
-  Alpine.data('app', () => ({
+// Exponer como función global — Alpine la llama con x-data="app()"
+window.app = function() { return ({
 
     // ── Auth ─────────────────────────────────────────────────
     user: null,
@@ -574,5 +574,5 @@ document.addEventListener('alpine:init', () => {
       if (!compare || compare <= price) return 0;
       return Math.round((1 - price / compare) * 100);
     },
-  }));
-});
+  }); };
+
