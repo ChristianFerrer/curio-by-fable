@@ -3,13 +3,49 @@
 'use strict';
 
 const { getSupabaseAdmin } = require('./_lib/supabase');
+const { PRODUCTS }         = require('./_lib/seed-data');
 
 const VALID_SORT = ['newest', 'price_asc', 'price_desc', 'featured', 'name_asc'];
 const PAGE_SIZE  = 20;
 
+// Filtrar + ordenar + paginar los datos locales
+function queryLocal(params) {
+  const { category, search, featured, min_price, max_price, age_min, age_max, sort, pageNum, pageSize } = params;
+  let items = PRODUCTS.filter(p => p.active);
+
+  if (featured === 'true')    items = items.filter(p => p.featured);
+  if (category)               items = items.filter(p => p.category === category);
+  if (min_price)              items = items.filter(p => p.price >= parseFloat(min_price));
+  if (max_price)              items = items.filter(p => p.price <= parseFloat(max_price));
+  if (age_min)                items = items.filter(p => p.age_max >= parseInt(age_min));
+  if (age_max)                items = items.filter(p => p.age_min <= parseInt(age_max));
+  if (search && search.trim()) {
+    const q = search.trim().toLowerCase();
+    items = items.filter(p => p.name.toLowerCase().includes(q) || (p.description||'').toLowerCase().includes(q));
+  }
+
+  const validSort = VALID_SORT.includes(sort) ? sort : 'newest';
+  if (validSort === 'price_asc')   items.sort((a,b) => a.price - b.price);
+  else if (validSort === 'price_desc') items.sort((a,b) => b.price - a.price);
+  else if (validSort === 'name_asc')   items.sort((a,b) => a.name.localeCompare(b.name));
+  else if (validSort === 'featured')   items.sort((a,b) => (b.featured?1:0) - (a.featured?1:0));
+  else items.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const total = items.length;
+  const from  = (pageNum - 1) * pageSize;
+  const page  = items.slice(from, from + pageSize).map(p => ({
+    id: p.id, name: p.name, slug: p.slug, price: p.price,
+    compare_price: p.compare_price, category: p.category,
+    age_min: p.age_min, age_max: p.age_max,
+    images: p.images, featured: p.featured, stock: p.stock, material: p.material,
+  }));
+
+  return { products: page, total, totalPages: Math.ceil(total / pageSize) };
+}
+
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Método no permitido' });
+  if (req.method !== 'GET')    return res.status(405).json({ error: 'Método no permitido' });
 
   const {
     category, search, featured,
@@ -20,56 +56,54 @@ module.exports = async function handler(req, res) {
     limit,
   } = req.query;
 
-  const supabase  = getSupabaseAdmin();
-  const pageNum   = Math.max(1, parseInt(page) || 1);
-  const pageSize  = Math.min(parseInt(limit) || PAGE_SIZE, 100);
-  const from      = (pageNum - 1) * pageSize;
-  const to        = from + pageSize - 1;
+  const pageNum  = Math.max(1, parseInt(page) || 1);
+  const pageSize = Math.min(parseInt(limit) || PAGE_SIZE, 100);
+  const from     = (pageNum - 1) * pageSize;
+  const to       = from + pageSize - 1;
 
-  let query = supabase
-    .schema('curio').from('products')
-    .select(
-      'id, name, slug, price, compare_price, category, age_min, age_max, images, featured, stock, material',
-      { count: 'exact' }
-    )
-    .eq('active', true);
+  try {
+    const supabase = getSupabaseAdmin();
+    let query = supabase
+      .schema('curio').from('products')
+      .select('id, name, slug, price, compare_price, category, age_min, age_max, images, featured, stock, material', { count: 'exact' })
+      .eq('active', true);
 
-  // Filtros
-  if (featured === 'true')     query = query.eq('featured', true);
-  if (category)                query = query.eq('category', category);
-  if (min_price)               query = query.gte('price', parseFloat(min_price));
-  if (max_price)               query = query.lte('price', parseFloat(max_price));
-  if (age_min)                 query = query.gte('age_max', parseInt(age_min));
-  if (age_max)                 query = query.lte('age_min', parseInt(age_max));
+    if (featured === 'true')     query = query.eq('featured', true);
+    if (category)                query = query.eq('category', category);
+    if (min_price)               query = query.gte('price', parseFloat(min_price));
+    if (max_price)               query = query.lte('price', parseFloat(max_price));
+    if (age_min)                 query = query.gte('age_max', parseInt(age_min));
+    if (age_max)                 query = query.lte('age_min', parseInt(age_max));
+    if (search && search.trim()) query = query.ilike('name', `%${search.trim()}%`);
 
-  // Búsqueda por nombre
-  if (search && search.trim()) {
-    query = query.ilike('name', `%${search.trim()}%`);
+    const validSort = VALID_SORT.includes(sort) ? sort : 'newest';
+    if (validSort === 'price_asc')       query = query.order('price', { ascending: true });
+    else if (validSort === 'price_desc') query = query.order('price', { ascending: false });
+    else if (validSort === 'name_asc')   query = query.order('name',  { ascending: true });
+    else if (validSort === 'featured')   query = query.order('featured', { ascending: false }).order('created_at', { ascending: false });
+    else                                 query = query.order('created_at', { ascending: false });
+
+    query = query.range(from, to);
+    const { data, error, count } = await query;
+
+    if (error) {
+      // Fallback a datos locales si curio schema no existe
+      console.warn('[products] Usando datos locales:', error.message);
+      const local = queryLocal({ category, search, featured, min_price, max_price, age_min, age_max, sort, pageNum, pageSize });
+      return res.status(200).json({ ...local, page: pageNum, pageSize, _source: 'local' });
+    }
+
+    return res.status(200).json({
+      products:   data || [],
+      total:      count || 0,
+      page:       pageNum,
+      pageSize,
+      totalPages: Math.ceil((count || 0) / pageSize),
+    });
+
+  } catch (e) {
+    console.error('[products] Error inesperado:', e.message);
+    const local = queryLocal({ category, search, featured, min_price, max_price, age_min, age_max, sort, pageNum, pageSize });
+    return res.status(200).json({ ...local, page: pageNum, pageSize, _source: 'local' });
   }
-
-  // Orden
-  const validSort = VALID_SORT.includes(sort) ? sort : 'newest';
-  if (validSort === 'price_asc')  query = query.order('price', { ascending: true });
-  else if (validSort === 'price_desc') query = query.order('price', { ascending: false });
-  else if (validSort === 'name_asc')   query = query.order('name', { ascending: true });
-  else if (validSort === 'featured')   query = query.order('featured', { ascending: false }).order('created_at', { ascending: false });
-  else                                 query = query.order('created_at', { ascending: false });
-
-  // Paginación
-  query = query.range(from, to);
-
-  const { data, error, count } = await query;
-
-  if (error) {
-    console.error('[products] Error:', error.message);
-    return res.status(500).json({ error: 'Error al obtener productos' });
-  }
-
-  return res.status(200).json({
-    products:   data || [],
-    total:      count || 0,
-    page:       pageNum,
-    pageSize,
-    totalPages: Math.ceil((count || 0) / pageSize),
-  });
 };
