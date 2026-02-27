@@ -22,12 +22,16 @@
   <link rel="stylesheet" href="/src/css/components.css">
   <link rel="stylesheet" href="/src/css/animations.css">
 
-  <!-- Scripts de la aplicación (orden crítico) -->
+  <!-- 1. Alpine.js PRIMERO (síncrono, sin defer) - debe estar ANTES de cualquier x-data -->
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
+  <!-- 2. Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <!-- 3. Config pública -->
   <script src="/public/config.js"></script>
+  <!-- 4. App factory — define window.app ANTES de que Alpine procese el DOM -->
   <script>
   (function() {
-    // 1) Crear cliente Supabase global
+    // Crear cliente Supabase
     var cfg = window.__CURIO_CONFIG__ || {};
     try {
       window._sb = window.supabase.createClient(
@@ -36,13 +40,14 @@
         { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }
       );
     } catch(e) {
-      console.warn('[Curio] Supabase mock:', e.message);
+      console.warn('[Curio] Supabase no disponible:', e.message);
       var _c = {
         select: function(){ return _c; }, eq: function(){ return _c; },
         order:  function(){ return _c; }, limit:  function(){ return _c; },
         ilike:  function(){ return _c; }, gte:    function(){ return _c; },
         lte:    function(){ return _c; }, insert: function(){ return _c; },
-        update: function(){ return _c; }, single: function(){ return Promise.resolve({data:null,error:null}); },
+        update: function(){ return _c; },
+        single: function(){ return Promise.resolve({data:null,error:null}); },
       };
       window._sb = {
         auth: {
@@ -57,17 +62,10 @@
       };
     }
 
-    // 2) Helpers
+    // Helpers
     var CART_KEY    = 'curio_cart';
     var SESSION_KEY = 'curio_sid';
 
-    function initReveal() {
-      if (!('IntersectionObserver' in window)) return;
-      var obs = new IntersectionObserver(function(entries) {
-        entries.forEach(function(e) { if (e.isIntersecting) { e.target.classList.add('revealed'); obs.unobserve(e.target); } });
-      }, { threshold: 0.1 });
-      document.querySelectorAll('.reveal').forEach(function(el) { obs.observe(el); });
-    }
     function fmtPrice(n) {
       if (n == null || isNaN(n)) return '—';
       return Number(n).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
@@ -77,7 +75,15 @@
       return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
     }
     function fmtCategory(slug) {
-      var m = { juguetes_educativos:'Juguetes Educativos', juegos_mesa:'Juegos de Mesa', decoracion_habitacion:'Decoración Habitación', mobiliario_montessori:'Mobiliario Montessori', puzzles:'Puzzles', construccion:'Construcción', exterior:'Exterior' };
+      var m = {
+        juguetes_educativos: 'Juguetes Educativos',
+        juegos_mesa: 'Juegos de Mesa',
+        decoracion_habitacion: 'Decoración Habitación',
+        mobiliario_montessori: 'Mobiliario Montessori',
+        puzzles: 'Puzzles',
+        construccion: 'Construcción',
+        exterior: 'Exterior',
+      };
       return m[slug] || slug || '';
     }
     function fmtAge(min, max) {
@@ -87,93 +93,171 @@
       return min + '–' + max + ' años';
     }
     function fmtStatus(s) {
-      var m = { pendiente:'Pendiente', procesando:'Procesando', enviado:'Enviado', entregado:'Entregado', cancelado:'Cancelado' };
+      var m = { pendiente: 'Pendiente', procesando: 'Procesando', enviado: 'Enviado', entregado: 'Entregado', cancelado: 'Cancelado' };
       return m[s] || s;
     }
+    function initReveal() {
+      if (!window.IntersectionObserver) return;
+      var obs = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) {
+          if (e.isIntersecting) { e.target.classList.add('revealed'); obs.unobserve(e.target); }
+        });
+      }, { threshold: 0.1 });
+      document.querySelectorAll('.reveal').forEach(function(el) { obs.observe(el); });
+    }
 
-    // 3) Factory function — Alpine la llama con x-data="app()"
+    // Factory Alpine
     window.app = function() {
-      var _sbL = window._sb;
+      var sb = window._sb;
       return {
-        // State
-        user: null,
-        showAuthModal: false, authView: 'login', authLoading: false, authError: '',
-        loginEmail: '', loginPassword: '',
-        registerName: '', registerEmail: '', registerPassword: '',
+        // ── Auth
+        user:              null,
+        showAuthModal:     false,
+        authView:          'login',
+        authLoading:       false,
+        authError:         '',
+        loginEmail:        '',
+        loginPassword:     '',
+        registerName:      '',
+        registerEmail:     '',
+        registerPassword:  '',
         afterAuthRedirect: null,
-        currentView: 'home',
-        navScrolled: false, megaMenuOpen: false, mobileMenuOpen: false,
-        categories: [],
-        featuredProducts: [],
-        products: [], productsLoading: false, productsTotal: 0, productsPage: 1, productsTotalPages: 1,
-        filters: { category: '', search: '', sort: 'newest' }, searchQuery: '',
-        currentProduct: null, currentProductLoading: false, selectedQty: 1, selectedImageIdx: 0,
-        cartItems: [], cartOpen: false,
-        cartCount: 0, cartSubtotal: 0, cartShipping: 4.99, cartTotal: 4.99,
-        checkoutStep: 1, checkoutLoading: false, lastOrderId: null,
-        shippingForm: { full_name:'', address_line1:'', address_line2:'', city:'', province:'', postal_code:'', phone:'' },
-        userOrders: [], ordersLoading: false,
-        newsletterEmail: '', newsletterLoading: false, newsletterDone: false,
+
+        // ── Nav
+        currentView:    'home',
+        navScrolled:    false,
+        megaMenuOpen:   false,
+        mobileMenuOpen: false,
+        categories:     [],
+
+        // ── Products
+        featuredProducts:  [],
+        products:          [],
+        productsLoading:   false,
+        productsTotal:     0,
+        productsPage:      1,
+        productsTotalPages:1,
+        filters:           { category: '', search: '', sort: 'newest' },
+        searchQuery:       '',
+        currentProduct:    null,
+        currentProductLoading: false,
+        selectedQty:       1,
+        selectedImageIdx:  0,
+
+        // ── Cart (plain values, updated via _updateCartTotals)
+        cartItems:    [],
+        cartOpen:     false,
+        cartCount:    0,
+        cartSubtotal: 0,
+        cartShipping: 4.99,
+        cartTotal:    4.99,
+
+        // ── Checkout
+        checkoutStep:    1,
+        checkoutLoading: false,
+        lastOrderId:     null,
+        shippingForm:    { full_name:'', address_line1:'', address_line2:'', city:'', province:'', postal_code:'', phone:'' },
+
+        // ── Orders
+        userOrders:    [],
+        ordersLoading: false,
+
+        // ── Newsletter
+        newsletterEmail:   '',
+        newsletterLoading: false,
+        newsletterDone:    false,
+
+        // ── Toasts
         toasts: [],
 
-        // ── Init
+        // ════════════════════════════════════
+        // INIT — Alpine calls this automatically
+        // ════════════════════════════════════
         init: function() {
           var self = this;
-          _sbL.auth.getSession().then(function(s) {
-            self.user = (s && s.data && s.data.session) ? s.data.session.user : null;
-          }).catch(function() { self.user = null; });
 
-          _sbL.auth.onAuthStateChange(function(ev, session) {
+          // Auth state
+          sb.auth.getSession().then(function(res) {
+            if (res && res.data && res.data.session) {
+              self.user = res.data.session.user;
+            }
+          }).catch(function() {});
+
+          sb.auth.onAuthStateChange(function(event, session) {
             self.user = session ? session.user : null;
             if (self.afterAuthRedirect && self.user) {
-              var d = self.afterAuthRedirect;
+              var dest = self.afterAuthRedirect;
               self.afterAuthRedirect = null;
               self.showAuthModal = false;
-              self.navigate(d);
+              self.navigate(dest);
             }
           });
 
+          // Cart
           this._loadCart();
-          window.addEventListener('scroll', function() { self.navScrolled = window.scrollY > 20; }, { passive: true });
-          this._handleRoute(location.hash);
-          window.addEventListener('hashchange', function() { self._handleRoute(location.hash); });
-          fetch('/api/categories').then(function(r){ return r.json(); })
-            .then(function(d){ self.categories = d.categories || []; })
-            .catch(function(){ self.categories = []; });
-          setTimeout(initReveal, 400);
+
+          // Scroll listener
+          window.addEventListener('scroll', function() {
+            self.navScrolled = window.scrollY > 20;
+          }, { passive: true });
+
+          // Routing
+          this._handleRoute(window.location.hash);
+          window.addEventListener('hashchange', function() {
+            self._handleRoute(window.location.hash);
+          });
+
+          // Categories
+          fetch('/api/categories')
+            .then(function(r) { return r.json(); })
+            .then(function(d) { self.categories = d.categories || []; })
+            .catch(function() { self.categories = []; });
+
+          setTimeout(initReveal, 500);
         },
 
-        // ── Router
+        // ════════════════════════════════════
+        // ROUTER
+        // ════════════════════════════════════
         _handleRoute: function(hash) {
           var self = this;
-          var path = hash.replace('#', '') || '/';
-          this._trackView(path);
-          this.cartOpen = false;
+          var path = (hash || '').replace('#', '') || '/';
+          this.cartOpen     = false;
           this.mobileMenuOpen = false;
+          this._trackView(path);
 
           if (path === '/' || path === '') {
             this.currentView = 'home';
             this._loadFeatured();
           } else if (path === '/catalogo' || path.startsWith('/catalogo?')) {
             this.currentView = 'catalog';
-            var qp = new URLSearchParams((path.split('?')[1]) || '');
-            if (qp.get('category')) this.filters.category = qp.get('category');
+            var params = new URLSearchParams((path.split('?')[1]) || '');
+            if (params.get('category')) this.filters.category = params.get('category');
             this.loadProducts(1);
           } else if (path.startsWith('/producto/')) {
-            var slug = path.split('/producto/')[1].split('?')[0];
             this.currentView = 'product';
-            this.selectedQty = 1; this.selectedImageIdx = 0;
+            this.selectedQty = 1;
+            this.selectedImageIdx = 0;
+            var slug = path.split('/producto/')[1].split('?')[0];
             this._loadProduct(slug);
           } else if (path === '/carrito') {
             this.currentView = 'cart';
           } else if (path === '/checkout') {
-            if (!this.user) { this.afterAuthRedirect = '/checkout'; this.showAuthModal = true; location.hash = '#/'; return; }
-            this.currentView = 'checkout'; this.checkoutStep = 1;
-            _sbL.from('profiles').select('full_name,phone').eq('id', this.user.id).single()
-              .then(function(p) {
-                if (p.data && p.data.full_name) self.shippingForm.full_name = p.data.full_name;
-                if (p.data && p.data.phone)     self.shippingForm.phone     = p.data.phone;
-              }).catch(function(){});
+            if (!this.user) {
+              this.afterAuthRedirect = '/checkout';
+              this.showAuthModal = true;
+              window.location.hash = '#/';
+              return;
+            }
+            this.currentView = 'checkout';
+            this.checkoutStep = 1;
+            sb.from('profiles').select('full_name,phone').eq('id', this.user.id).single()
+              .then(function(res) {
+                if (res.data) {
+                  if (res.data.full_name) self.shippingForm.full_name = res.data.full_name;
+                  if (res.data.phone)     self.shippingForm.phone     = res.data.phone;
+                }
+              }).catch(function() {});
           } else if (path === '/perfil') {
             if (!this.user) { this.navigate('/'); return; }
             this.currentView = 'profile';
@@ -185,225 +269,438 @@
             this.currentView = 'home';
             this._loadFeatured();
           }
+
           window.scrollTo({ top: 0, behavior: 'smooth' });
           setTimeout(initReveal, 300);
         },
 
-        navigate: function(path) { location.hash = '#' + path; },
+        navigate: function(path) {
+          window.location.hash = '#' + path;
+        },
 
-        // ── Products
+        // ════════════════════════════════════
+        // PRODUCTS
+        // ════════════════════════════════════
         _loadFeatured: function() {
           if (this.featuredProducts.length) return;
           var self = this;
           fetch('/api/products?featured=true&limit=8')
-            .then(function(r){ return r.json(); })
-            .then(function(d){ self.featuredProducts = d.products || []; })
-            .catch(function(){});
+            .then(function(r) { return r.json(); })
+            .then(function(d) { self.featuredProducts = d.products || []; })
+            .catch(function() {});
         },
+
         _loadProduct: function(slug) {
           var self = this;
-          this.currentProduct = null; this.currentProductLoading = true;
+          this.currentProduct = null;
+          this.currentProductLoading = true;
           fetch('/api/product?slug=' + encodeURIComponent(slug))
-            .then(function(r) { if (!r.ok) throw new Error('not found'); return r.json(); })
-            .then(function(d) { self.currentProduct = d; })
-            .catch(function() { self.toast('Producto no encontrado.', 'error'); self.navigate('/catalogo'); })
-            .finally(function() { self.currentProductLoading = false; });
+            .then(function(r) {
+              if (!r.ok) throw new Error('not found');
+              return r.json();
+            })
+            .then(function(d) {
+              self.currentProduct = d;
+            })
+            .catch(function() {
+              self.toast('Producto no encontrado.', 'error');
+              self.navigate('/catalogo');
+            })
+            .finally(function() {
+              self.currentProductLoading = false;
+            });
         },
+
         loadProducts: function(page) {
           var self = this;
-          page = page || 1; this.productsLoading = true; this.productsPage = page;
-          var p = new URLSearchParams({ page: String(page), limit: '20', sort: this.filters.sort });
-          if (this.filters.category) p.set('category', this.filters.category);
-          if (this.filters.search)   p.set('search',   this.filters.search);
-          fetch('/api/products?' + p.toString())
-            .then(function(r){ return r.json(); })
-            .then(function(d) { self.products = d.products || []; self.productsTotal = d.total || 0; self.productsTotalPages = d.totalPages || 1; })
+          page = page || 1;
+          this.productsLoading = true;
+          this.productsPage    = page;
+          var qs = new URLSearchParams({
+            page:  String(page),
+            limit: '20',
+            sort:  this.filters.sort || 'newest',
+          });
+          if (this.filters.category) qs.set('category', this.filters.category);
+          if (this.filters.search)   qs.set('search',   this.filters.search);
+          fetch('/api/products?' + qs.toString())
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              self.products          = d.products   || [];
+              self.productsTotal     = d.total       || 0;
+              self.productsTotalPages = d.totalPages || 1;
+            })
             .catch(function() { self.toast('Error cargando productos.', 'error'); })
             .finally(function() { self.productsLoading = false; });
         },
-        setFilter:      function(key, val) { this.filters[key] = val; this.loadProducts(1); },
-        clearFilters:   function() { this.filters = { category:'', search:'', sort:'newest' }; this.searchQuery=''; this.loadProducts(1); },
-        searchProducts: function() { this.filters.search = this.searchQuery; if (this.currentView !== 'catalog') this.navigate('/catalogo'); else this.loadProducts(1); },
 
-        // ── Auth
+        setFilter: function(key, val) {
+          this.filters[key] = val;
+          this.loadProducts(1);
+        },
+        clearFilters: function() {
+          this.filters    = { category: '', search: '', sort: 'newest' };
+          this.searchQuery = '';
+          this.loadProducts(1);
+        },
+        searchProducts: function() {
+          this.filters.search = this.searchQuery;
+          if (this.currentView !== 'catalog') this.navigate('/catalogo');
+          else this.loadProducts(1);
+        },
+
+        // ════════════════════════════════════
+        // AUTH
+        // ════════════════════════════════════
+        openLogin: function() {
+          this.authView  = 'login';
+          this.authError = '';
+          this.showAuthModal = true;
+        },
+        openRegister: function() {
+          this.authView  = 'register';
+          this.authError = '';
+          this.showAuthModal = true;
+        },
+        closeModal: function() {
+          this.showAuthModal   = false;
+          this.authError       = '';
+          this.afterAuthRedirect = null;
+        },
+
         login: function() {
           var self = this;
-          if (!this.loginEmail || !this.loginPassword) { this.authError = 'Por favor, completa todos los campos.'; return; }
-          this.authLoading = true; this.authError = '';
-          _sbL.auth.signInWithPassword({ email: this.loginEmail.trim(), password: this.loginPassword })
-            .then(function(r) {
+          if (!this.loginEmail || !this.loginPassword) {
+            this.authError = 'Por favor, completa todos los campos.';
+            return;
+          }
+          this.authLoading = true;
+          this.authError   = '';
+          sb.auth.signInWithPassword({ email: this.loginEmail.trim(), password: this.loginPassword })
+            .then(function(res) {
               self.authLoading = false;
-              if (r.error) { self.authError = 'Email o contraseña incorrectos.'; }
-              else { self.showAuthModal = false; self.loginEmail = ''; self.loginPassword = ''; self.toast('¡Bienvenido de vuelta!', 'success'); }
-            }).catch(function() { self.authLoading = false; self.authError = 'Error al iniciar sesión.'; });
+              if (res.error) {
+                self.authError = 'Email o contraseña incorrectos.';
+              } else {
+                self.showAuthModal  = false;
+                self.loginEmail     = '';
+                self.loginPassword  = '';
+                self.toast('¡Bienvenido de vuelta!', 'success');
+              }
+            })
+            .catch(function() {
+              self.authLoading = false;
+              self.authError = 'Error al iniciar sesión.';
+            });
         },
+
         register: function() {
           var self = this;
-          if (!this.registerName || !this.registerEmail || !this.registerPassword) { this.authError = 'Por favor, completa todos los campos.'; return; }
-          if (this.registerPassword.length < 8) { this.authError = 'La contraseña debe tener al menos 8 caracteres.'; return; }
-          this.authLoading = true; this.authError = '';
-          _sbL.auth.signUp({ email: this.registerEmail.trim(), password: this.registerPassword, options: { data: { full_name: this.registerName.trim() } } })
-            .then(function(r) {
+          if (!this.registerName || !this.registerEmail || !this.registerPassword) {
+            this.authError = 'Por favor, completa todos los campos.';
+            return;
+          }
+          if (this.registerPassword.length < 8) {
+            this.authError = 'La contraseña debe tener al menos 8 caracteres.';
+            return;
+          }
+          this.authLoading = true;
+          this.authError   = '';
+          sb.auth.signUp({
+            email:    this.registerEmail.trim(),
+            password: this.registerPassword,
+            options:  { data: { full_name: this.registerName.trim() } },
+          })
+            .then(function(res) {
               self.authLoading = false;
-              if (r.error) { self.authError = r.error.message && r.error.message.includes('already') ? 'Este email ya está registrado.' : 'Error al registrarse.'; }
-              else { self.showAuthModal = false; self.registerName=''; self.registerEmail=''; self.registerPassword=''; self.toast('¡Registro exitoso! Revisa tu email.', 'success'); }
-            }).catch(function() { self.authLoading = false; self.authError = 'Error al registrarse.'; });
+              if (res.error) {
+                self.authError = res.error.message && res.error.message.includes('already')
+                  ? 'Este email ya está registrado.'
+                  : 'Error al registrarse.';
+              } else {
+                self.showAuthModal    = false;
+                self.registerName     = '';
+                self.registerEmail    = '';
+                self.registerPassword = '';
+                self.toast('¡Registro exitoso! Revisa tu email para confirmar.', 'success');
+              }
+            })
+            .catch(function() {
+              self.authLoading = false;
+              self.authError = 'Error al registrarse.';
+            });
         },
+
         loginWithGoogle: function() {
-          _sbL.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/#/' } });
+          sb.auth.signInWithOAuth({
+            provider: 'google',
+            options:  { redirectTo: window.location.origin + '/#/' },
+          });
         },
+
         logout: function() {
           var self = this;
-          _sbL.auth.signOut().then(function() { self.navigate('/'); self.toast('Sesión cerrada.', 'info'); }).catch(function(){});
+          sb.auth.signOut()
+            .then(function() { self.navigate('/'); self.toast('Sesión cerrada.', 'info'); })
+            .catch(function() {});
         },
-        openLogin:    function() { this.authView = 'login';    this.authError = ''; this.showAuthModal = true; },
-        openRegister: function() { this.authView = 'register'; this.authError = ''; this.showAuthModal = true; },
-        closeModal:   function() { this.showAuthModal = false; this.authError = ''; },
 
-        // ── Cart
+        // ════════════════════════════════════
+        // CART
+        // ════════════════════════════════════
         _updateCartTotals: function() {
-          this.cartCount    = this.cartItems.reduce(function(s,i){ return s+i.quantity; }, 0);
-          this.cartSubtotal = this.cartItems.reduce(function(s,i){ return s+i.price*i.quantity; }, 0);
-          this.cartShipping = this.cartSubtotal >= 50 ? 0 : 4.99;
-          this.cartTotal    = this.cartSubtotal + this.cartShipping;
+          var count = 0, sub = 0;
+          for (var i = 0; i < this.cartItems.length; i++) {
+            count += this.cartItems[i].quantity;
+            sub   += this.cartItems[i].price * this.cartItems[i].quantity;
+          }
+          this.cartCount    = count;
+          this.cartSubtotal = sub;
+          this.cartShipping = sub >= 50 ? 0 : 4.99;
+          this.cartTotal    = sub + this.cartShipping;
         },
+
         addToCart: function(product, qty) {
           qty = Math.max(1, parseInt(qty) || 1);
-          var ex = this.cartItems.find(function(i){ return i.product_id === product.id; });
-          if (ex) { ex.quantity += qty; }
-          else { this.cartItems.push({ product_id: product.id, name: product.name, slug: product.slug, price: product.price, image_url: (product.images && product.images[0]) || null, quantity: qty }); }
-          this._saveCart(); this._updateCartTotals();
+          var found = null;
+          for (var i = 0; i < this.cartItems.length; i++) {
+            if (this.cartItems[i].product_id === product.id) { found = this.cartItems[i]; break; }
+          }
+          if (found) {
+            found.quantity += qty;
+          } else {
+            this.cartItems.push({
+              product_id: product.id,
+              name:       product.name,
+              slug:       product.slug,
+              price:      product.price,
+              image_url:  (product.images && product.images[0]) || null,
+              quantity:   qty,
+            });
+          }
+          this._saveCart();
+          this._updateCartTotals();
           this.toast(product.name + ' añadido al carrito 🛒', 'success');
           this.cartOpen = true;
         },
+
         removeFromCart: function(pid) {
-          this.cartItems = this.cartItems.filter(function(i){ return i.product_id !== pid; });
-          this._saveCart(); this._updateCartTotals();
+          this.cartItems = this.cartItems.filter(function(i) { return i.product_id !== pid; });
+          this._saveCart();
+          this._updateCartTotals();
         },
+
         incrementQty: function(pid) {
-          var it = this.cartItems.find(function(i){ return i.product_id === pid; });
-          if (it) { it.quantity++; this._saveCart(); this._updateCartTotals(); }
+          for (var i = 0; i < this.cartItems.length; i++) {
+            if (this.cartItems[i].product_id === pid) {
+              this.cartItems[i].quantity++;
+              this._saveCart();
+              this._updateCartTotals();
+              break;
+            }
+          }
         },
+
         decrementQty: function(pid) {
-          var it = this.cartItems.find(function(i){ return i.product_id === pid; });
-          if (!it) return;
-          if (it.quantity <= 1) this.removeFromCart(pid);
-          else { it.quantity--; this._saveCart(); this._updateCartTotals(); }
+          for (var i = 0; i < this.cartItems.length; i++) {
+            if (this.cartItems[i].product_id === pid) {
+              if (this.cartItems[i].quantity <= 1) {
+                this.removeFromCart(pid);
+              } else {
+                this.cartItems[i].quantity--;
+                this._saveCart();
+                this._updateCartTotals();
+              }
+              break;
+            }
+          }
         },
-        _saveCart:  function() { try { localStorage.setItem(CART_KEY, JSON.stringify(this.cartItems)); } catch(e) {} },
-        _loadCart:  function() { try { var raw = localStorage.getItem(CART_KEY); if (raw) { this.cartItems = JSON.parse(raw); this._updateCartTotals(); } } catch(e) {} },
-        clearCart:  function() { this.cartItems = []; localStorage.removeItem(CART_KEY); this._updateCartTotals(); },
+
+        _saveCart: function() {
+          try { localStorage.setItem(CART_KEY, JSON.stringify(this.cartItems)); } catch(e) {}
+        },
+        _loadCart: function() {
+          try {
+            var raw = localStorage.getItem(CART_KEY);
+            if (raw) {
+              this.cartItems = JSON.parse(raw);
+              this._updateCartTotals();
+            }
+          } catch(e) {}
+        },
+        clearCart: function() {
+          this.cartItems = [];
+          localStorage.removeItem(CART_KEY);
+          this._updateCartTotals();
+        },
+
         goToCheckout: function() {
           this.cartOpen = false;
-          if (!this.user) { this.afterAuthRedirect = '/checkout'; this.openLogin(); return; }
+          if (!this.user) {
+            this.afterAuthRedirect = '/checkout';
+            this.openLogin();
+            return;
+          }
           this.navigate('/checkout');
         },
 
-        // ── Checkout
+        // ════════════════════════════════════
+        // CHECKOUT
+        // ════════════════════════════════════
         validateShipping: function() {
           var f = this.shippingForm;
-          if (!f.full_name || !f.address_line1 || !f.city || !f.postal_code || !f.phone) { this.toast('Completa todos los campos obligatorios.', 'error'); return false; }
-          if (!/^d{5}$/.test(f.postal_code)) { this.toast('Código postal debe tener 5 dígitos.', 'error'); return false; }
+          if (!f.full_name || !f.address_line1 || !f.city || !f.postal_code || !f.phone) {
+            this.toast('Completa todos los campos obligatorios.', 'error');
+            return false;
+          }
+          if (!/^d{5}$/.test(f.postal_code)) {
+            this.toast('Código postal debe tener 5 dígitos.', 'error');
+            return false;
+          }
           return true;
         },
-        goToConfirm: function() { if (this.validateShipping()) this.checkoutStep = 2; },
-        submitOrder: function() {
-          var self = this;
-          if (!this.user) { this.openLogin(); return; }
-          if (!this.cartItems.length) { this.toast('El carrito está vacío.', 'error'); return; }
-          this.checkoutLoading = true;
-          _sbL.auth.getSession().then(function(s) {
-            var token = (s && s.data && s.data.session) ? s.data.session.access_token : '';
-            return fetch('/api/orders', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-              body: JSON.stringify({
-                items: self.cartItems.map(function(i){ return { product_id: i.product_id, quantity: i.quantity }; }),
-                shipping_address: self.shippingForm
-              })
-            });
-          }).then(function(r) {
-            return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || 'Error'); return d; });
-          }).then(function(d) {
-            self.clearCart(); self.navigate('/pedido-confirmado/' + d.order_id);
-          }).catch(function(e) {
-            self.toast(e.message, 'error');
-          }).finally(function() { self.checkoutLoading = false; });
+
+        goToConfirm: function() {
+          if (this.validateShipping()) this.checkoutStep = 2;
         },
 
-        // ── Orders
+        submitOrder: function() {
+          var self = this;
+          if (!this.user)          { this.openLogin(); return; }
+          if (!this.cartItems.length) { this.toast('El carrito está vacío.', 'error'); return; }
+          this.checkoutLoading = true;
+          sb.auth.getSession()
+            .then(function(res) {
+              var token = (res && res.data && res.data.session) ? res.data.session.access_token : '';
+              return fetch('/api/orders', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body:    JSON.stringify({
+                  items: self.cartItems.map(function(i) { return { product_id: i.product_id, quantity: i.quantity }; }),
+                  shipping_address: self.shippingForm,
+                }),
+              });
+            })
+            .then(function(r) {
+              return r.json().then(function(d) {
+                if (!r.ok) throw new Error(d.error || 'Error al procesar el pedido.');
+                return d;
+              });
+            })
+            .then(function(d) {
+              self.clearCart();
+              self.navigate('/pedido-confirmado/' + d.order_id);
+            })
+            .catch(function(e) { self.toast(e.message || 'Error al procesar el pedido.', 'error'); })
+            .finally(function() { self.checkoutLoading = false; });
+        },
+
+        // ════════════════════════════════════
+        // ORDERS
+        // ════════════════════════════════════
         loadOrders: function() {
           var self = this;
           this.ordersLoading = true;
-          _sbL.auth.getSession().then(function(s) {
-            var token = (s && s.data && s.data.session) ? s.data.session.access_token : '';
-            return fetch('/api/orders', { headers: { 'Authorization': 'Bearer ' + token } });
-          }).then(function(r){ return r.json(); })
-          .then(function(d){ self.userOrders = d.orders || []; })
-          .catch(function(){})
-          .finally(function(){ self.ordersLoading = false; });
+          sb.auth.getSession()
+            .then(function(res) {
+              var token = (res && res.data && res.data.session) ? res.data.session.access_token : '';
+              return fetch('/api/orders', { headers: { 'Authorization': 'Bearer ' + token } });
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(d) { self.userOrders = d.orders || []; })
+            .catch(function() {})
+            .finally(function() { self.ordersLoading = false; });
         },
 
-        // ── Newsletter
+        // ════════════════════════════════════
+        // NEWSLETTER
+        // ════════════════════════════════════
         subscribeNewsletter: function() {
           var self = this;
-          if (!this.newsletterEmail || !this.newsletterEmail.includes('@')) { this.toast('Introduce un email válido.', 'error'); return; }
+          if (!this.newsletterEmail || !this.newsletterEmail.includes('@')) {
+            this.toast('Introduce un email válido.', 'error');
+            return;
+          }
           this.newsletterLoading = true;
-          fetch('/api/newsletter', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: this.newsletterEmail }) })
-            .then(function(r){ return r.json(); })
+          fetch('/api/newsletter', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ email: this.newsletterEmail }),
+          })
+            .then(function(r) { return r.json(); })
             .then(function(d) {
-              if (d.already) { self.toast('Este email ya está suscrito 😊', 'info'); }
-              else { self.newsletterDone = true; self.newsletterEmail = ''; self.toast('¡Gracias! Te has suscrito.', 'success'); }
-            }).catch(function() { self.toast('Error al suscribirse.', 'error'); })
+              if (d.already) {
+                self.toast('Este email ya está suscrito 😊', 'info');
+              } else {
+                self.newsletterDone  = true;
+                self.newsletterEmail = '';
+                self.toast('¡Gracias! Te has suscrito.', 'success');
+              }
+            })
+            .catch(function() { self.toast('Error al suscribirse.', 'error'); })
             .finally(function() { self.newsletterLoading = false; });
         },
 
-        // ── Track view
+        // ════════════════════════════════════
+        // ANALYTICS
+        // ════════════════════════════════════
         _trackView: function(page) {
-          var sid = sessionStorage.getItem(SESSION_KEY);
-          if (!sid) {
-            sid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-            sessionStorage.setItem(SESSION_KEY, sid);
-          }
-          fetch('/api/track-view', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ page: page, session_id: sid, user_id: this.user ? this.user.id : null })
-          }).catch(function(){});
+          try {
+            var sid = sessionStorage.getItem(SESSION_KEY);
+            if (!sid) {
+              sid = (window.crypto && window.crypto.randomUUID)
+                ? window.crypto.randomUUID()
+                : Math.random().toString(36).slice(2);
+              sessionStorage.setItem(SESSION_KEY, sid);
+            }
+            fetch('/api/track-view', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify({
+                page:       page,
+                session_id: sid,
+                user_id:    this.user ? this.user.id : null,
+              }),
+            }).catch(function() {});
+          } catch(e) {}
         },
 
-        // ── Toasts
+        // ════════════════════════════════════
+        // TOASTS
+        // ════════════════════════════════════
         toast: function(msg, type) {
           type = type || 'info';
-          var id  = Date.now() + Math.random();
-          var t   = { id: id, message: msg, type: type, visible: true };
-          this.toasts.push(t);
+          var id   = Date.now() + Math.random();
+          var item = { id: id, message: msg, type: type, visible: true };
+          this.toasts.push(item);
           var self = this;
           setTimeout(function() {
-            t.visible = false;
-            setTimeout(function() { self.toasts = self.toasts.filter(function(x){ return x.id !== id; }); }, 400);
+            item.visible = false;
+            setTimeout(function() {
+              self.toasts = self.toasts.filter(function(t) { return t.id !== id; });
+            }, 400);
           }, 3800);
         },
 
-        // ── Format helpers
+        // ════════════════════════════════════
+        // FORMAT HELPERS
+        // ════════════════════════════════════
         formatPrice:    function(n)         { return fmtPrice(n); },
         formatDate:     function(iso)       { return fmtDate(iso); },
         formatCategory: function(slug)      { return fmtCategory(slug); },
         formatAge:      function(min, max)  { return fmtAge(min, max); },
         formatStatus:   function(s)         { return fmtStatus(s); },
-        discountPct:    function(price, compare) {
-          if (!compare || compare <= price) return 0;
-          return Math.round((1 - price / compare) * 100);
+        discountPct:    function(price, cmp) {
+          if (!cmp || cmp <= price) return 0;
+          return Math.round((1 - price / cmp) * 100);
         },
       };
     };
   })();
   </script>
-  <!-- Alpine.js v3.14.1 con defer — window.app() ya está definido cuando Alpine inicialice -->
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 </head>
 <body>
-<div x-data="app()" x-cloak>
+<div x-data="window.app()">
 
   <!-- ═══════════════════════════════════════════════════════
        NAVIGATION
@@ -573,7 +870,7 @@
         <template x-for="product in featuredProducts" :key="product.id">
           <div class="product-card reveal" @click="navigate('/producto/' + product.slug)">
             <div class="product-card-image">
-              <img :src="product.images?.[0] || 'https://via.placeholder.com/400x400?text=Curio'" :alt="product.name" loading="lazy">
+              <img :src="(product.images && product.images[0]) || 'https://via.placeholder.com/400x400?text=Curio'" :alt="product.name" loading="lazy">
               <div class="product-badges">
                 <span class="product-badge badge-featured" x-show="product.featured">⭐ Destacado</span>
                 <span class="product-badge badge-sale" x-show="product.compare_price > product.price" x-text="'-' + discountPct(product.price, product.compare_price) + '%'"></span>
@@ -704,7 +1001,7 @@
           <template x-for="product in products" :key="product.id">
             <div class="product-card" @click="navigate('/producto/' + product.slug)">
               <div class="product-card-image">
-                <img :src="product.images?.[0] || 'https://via.placeholder.com/400x400?text=Curio'" :alt="product.name" loading="lazy">
+                <img :src="(product.images && product.images[0]) || 'https://via.placeholder.com/400x400?text=Curio'" :alt="product.name" loading="lazy">
                 <div class="product-badges">
                   <span class="product-badge badge-sale" x-show="product.compare_price > product.price" x-text="'-' + discountPct(product.price, product.compare_price) + '%'"></span>
                 </div>
@@ -757,7 +1054,7 @@
     <nav style="margin-bottom:var(--sp-xl);font-size:0.875rem;color:var(--text-3)">
       <a href="#/" @click.prevent="navigate('/')" style="color:var(--text-3)">Inicio</a> /
       <a href="#/catalogo" @click.prevent="navigate('/catalogo')" style="color:var(--text-3)">Tienda</a>
-      <span x-show="currentProduct"> / <span x-text="currentProduct?.name" style="color:var(--text-2)"></span></span>
+      <span x-show="currentProduct"> / <span x-text="(currentProduct && currentProduct.name)" style="color:var(--text-2)"></span></span>
     </nav>
 
     <!-- Loading state -->
@@ -768,10 +1065,10 @@
       <!-- Galería -->
       <div class="product-gallery">
         <div class="product-main-img">
-          <img :src="currentProduct?.images?.[selectedImageIdx] || currentProduct?.images?.[0]" :alt="currentProduct?.name" loading="lazy">
+          <img :src="(currentProduct && currentProduct.images && (currentProduct.images[selectedImageIdx] || currentProduct.images[0]))" :alt="(currentProduct && currentProduct.name)" loading="lazy">
         </div>
-        <div class="product-thumbs" x-show="currentProduct?.images?.length > 1">
-          <template x-for="(img, idx) in (currentProduct?.images || [])" :key="idx">
+        <div class="product-thumbs" x-show="(currentProduct && currentProduct.images && currentProduct.images.length) > 1">
+          <template x-for="(img, idx) in ((currentProduct && currentProduct.images || []))" :key="idx">
             <div class="product-thumb" :class="{active: idx===selectedImageIdx}" @click="selectedImageIdx=idx">
               <img :src="img" :alt="'Imagen ' + (idx+1)" loading="lazy">
             </div>
@@ -781,51 +1078,51 @@
 
       <!-- Info -->
       <div class="product-info">
-        <p class="product-info-eyebrow" x-text="formatCategory(currentProduct?.category)"></p>
-        <h1 class="product-info-title" x-text="currentProduct?.name"></h1>
+        <p class="product-info-eyebrow" x-text="formatCategory((currentProduct && currentProduct.category))"></p>
+        <h1 class="product-info-title" x-text="(currentProduct && currentProduct.name)"></h1>
 
         <div class="product-info-price">
-          <span class="price-main" x-text="formatPrice(currentProduct?.price)"></span>
-          <span class="price-compare" x-show="currentProduct?.compare_price" x-text="formatPrice(currentProduct?.compare_price)"></span>
-          <span class="price-save" x-show="currentProduct?.compare_price > currentProduct?.price"
-                x-text="'-' + discountPct(currentProduct?.price, currentProduct?.compare_price) + '%'"></span>
+          <span class="price-main" x-text="formatPrice((currentProduct && currentProduct.price))"></span>
+          <span class="price-compare" x-show="(currentProduct && currentProduct.compare_price)" x-text="formatPrice((currentProduct && currentProduct.compare_price))"></span>
+          <span class="price-save" x-show="(currentProduct && currentProduct.compare_price) > (currentProduct && currentProduct.price)"
+                x-text="'-' + discountPct((currentProduct && currentProduct.price), (currentProduct && currentProduct.compare_price)) + '%'"></span>
         </div>
 
-        <p style="color:var(--text-2);line-height:1.7;margin-bottom:var(--sp-lg)" x-text="currentProduct?.description"></p>
+        <p style="color:var(--text-2);line-height:1.7;margin-bottom:var(--sp-lg)" x-text="(currentProduct && currentProduct.description)"></p>
 
         <!-- Meta -->
         <div class="product-meta-list">
           <div class="meta-item">
             <span class="meta-label">Edad recomendada</span>
-            <span class="meta-value" x-text="formatAge(currentProduct?.age_min, currentProduct?.age_max)"></span>
+            <span class="meta-value" x-text="formatAge((currentProduct && currentProduct.age_min), (currentProduct && currentProduct.age_max))"></span>
           </div>
           <div class="meta-item">
             <span class="meta-label">Material</span>
-            <span class="meta-value" x-text="currentProduct?.material || 'Madera maciza'"></span>
+            <span class="meta-value" x-text="(currentProduct && currentProduct.material || 'Madera maciza')"></span>
           </div>
-          <div class="meta-item" x-show="currentProduct?.dimensions">
+          <div class="meta-item" x-show="(currentProduct && currentProduct.dimensions)">
             <span class="meta-label">Dimensiones</span>
-            <span class="meta-value" x-text="currentProduct?.dimensions"></span>
+            <span class="meta-value" x-text="(currentProduct && currentProduct.dimensions)"></span>
           </div>
           <div class="meta-item">
             <span class="meta-label">Disponibilidad</span>
-            <span class="meta-value" :style="(currentProduct?.stock||0)>0 ? 'color:var(--success)' : 'color:var(--red)'"
-                  x-text="(currentProduct?.stock||0)>0 ? '✓ En stock (' + currentProduct?.stock + ' uds)' : '✗ Sin stock'"></span>
+            <span class="meta-value" :style="((currentProduct && currentProduct.stock)||0)>0 ? 'color:var(--success)' : 'color:var(--red)'"
+                  x-text="((currentProduct && currentProduct.stock)||0)>0 ? '✓ En stock (' + (currentProduct && currentProduct.stock) + ' uds)' : '✗ Sin stock'"></span>
           </div>
         </div>
 
         <!-- Cantidad -->
-        <div class="qty-selector" x-show="(currentProduct?.stock||0)>0">
+        <div class="qty-selector" x-show="((currentProduct && currentProduct.stock)||0)>0">
           <label>Cantidad:</label>
           <button class="qty-btn" @click="selectedQty>1 && selectedQty--">−</button>
           <span class="qty-display" x-text="selectedQty"></span>
-          <button class="qty-btn" @click="selectedQty < (currentProduct?.stock||0) && selectedQty++">+</button>
+          <button class="qty-btn" @click="selectedQty < ((currentProduct && currentProduct.stock)||0) && selectedQty++">+</button>
         </div>
 
         <!-- Acciones -->
         <div class="product-actions">
           <button class="btn btn-primary btn-lg"
-                  :disabled="!(currentProduct?.stock>0)"
+                  :disabled="!((currentProduct && currentProduct.stock)>0)"
                   @click="addToCart(currentProduct, selectedQty)">
             🛒 Añadir al carrito
           </button>
@@ -836,9 +1133,9 @@
         </div>
 
         <!-- Descripción larga -->
-        <div class="product-description" x-show="currentProduct?.long_description">
+        <div class="product-description" x-show="(currentProduct && currentProduct.long_description)">
           <h3>Descripción</h3>
-          <p x-text="currentProduct?.long_description"></p>
+          <p x-text="(currentProduct && currentProduct.long_description)"></p>
         </div>
 
         <!-- Badges certificaciones -->
@@ -852,13 +1149,13 @@
     </div>
 
     <!-- Productos relacionados -->
-    <div x-show="currentProduct?.related?.length" style="margin-top:var(--sp-4xl)">
+    <div x-show="(currentProduct && currentProduct.related && currentProduct.related.length)" style="margin-top:var(--sp-4xl)">
       <h2 class="section-title" style="margin-bottom:var(--sp-xl)">También te puede gustar</h2>
       <div class="products-grid">
-        <template x-for="product in (currentProduct?.related || [])" :key="product.id">
+        <template x-for="product in ((currentProduct && currentProduct.related || []))" :key="product.id">
           <div class="product-card" @click="navigate('/producto/' + product.slug)">
             <div class="product-card-image">
-              <img :src="product.images?.[0] || 'https://via.placeholder.com/400x400'" :alt="product.name" loading="lazy">
+              <img :src="(product.images && product.images[0]) || 'https://via.placeholder.com/400x400'" :alt="product.name" loading="lazy">
             </div>
             <div class="product-card-body">
               <span class="product-card-category" x-text="formatCategory(product.category)"></span>
@@ -1059,11 +1356,11 @@
   <!-- ═══════════════════════════════════════════════════════
        PROFILE / ORDERS VIEW
   ═══════════════════════════════════════════════════════ -->
-  <div x-show="currentView==='profile'" class="container page-wrapper" x-init="user && loadOrders()">
+  <div x-show="currentView==='profile'" class="container page-wrapper">
     <div class="flex items-center justify-between" style="margin-bottom:var(--sp-xl)">
       <div>
         <h1 class="section-title">Mi cuenta</h1>
-        <p style="color:var(--text-2);margin-top:4px" x-text="user?.email"></p>
+        <p style="color:var(--text-2);margin-top:4px" x-text="user && user.email"></p>
       </div>
       <button class="btn btn-ghost" @click="logout()">Cerrar sesión</button>
     </div>
@@ -1087,9 +1384,9 @@
           <div class="order-card-body">
             <template x-for="item in (order.order_items||[])" :key="item.id">
               <div class="order-item-row">
-                <img class="order-item-img" :src="item.product_snapshot?.image_url || 'https://via.placeholder.com/56'" :alt="item.product_snapshot?.name">
+                <img class="order-item-img" :src="(item.product_snapshot && item.product_snapshot.image_url) || 'https://via.placeholder.com/56'" :alt="(item.product_snapshot && item.product_snapshot.name)">
                 <div>
-                  <p style="font-weight:700;font-family:var(--font-head);font-size:0.9rem" x-text="item.product_snapshot?.name"></p>
+                  <p style="font-weight:700;font-family:var(--font-head);font-size:0.9rem" x-text="(item.product_snapshot && item.product_snapshot.name)"></p>
                   <p style="font-size:0.8rem;color:var(--text-3)">×<span x-text="item.quantity"></span> · <span x-text="formatPrice(item.unit_price)"></span></p>
                 </div>
               </div>
@@ -1169,7 +1466,7 @@
   <!-- ═══════════════════════════════════════════════════════
        AUTH MODAL
   ═══════════════════════════════════════════════════════ -->
-  <div class="modal-overlay" x-show="showAuthModal" @click.self="showAuthModal=false"
+  <div class="modal-overlay" x-show="showAuthModal" @click.self="closeModal()"
        x-transition:enter="overlay-enter" x-transition:enter-from="overlay-enter-from" x-transition:enter-to="overlay-enter-to"
        x-transition:leave="overlay-leave" x-transition:leave-to="overlay-leave-to">
     <div class="modal"

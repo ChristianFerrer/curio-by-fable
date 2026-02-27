@@ -644,10 +644,13 @@ select.form-control   { cursor: pointer; }
   background: rgba(0,0,0,.5);
   backdrop-filter: blur(4px);
   z-index: 600;
-  display: flex;
+  display: none;          /* Alpine x-show lo activa con display:flex cuando showAuthModal=true */
   align-items: center;
   justify-content: center;
   padding: var(--sp-lg);
+}
+.modal-overlay.is-open {
+  display: flex;
 }
 
 .modal {
