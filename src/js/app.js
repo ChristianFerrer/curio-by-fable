@@ -1,5 +1,9 @@
 // src/js/app.js — Alpine.js store para la tienda pública de Curio by Fable
-import supabase from './supabase-client.js';
+// Usa window.supabase (UMD ya cargado) + window.__CURIO_CONFIG__
+const _cfg      = window.__CURIO_CONFIG__ || {};
+const supabase  = window.supabase.createClient(_cfg.supabaseUrl || '', _cfg.supabaseAnon || '', {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+});
 
 // ── Utilidades de formato ────────────────────────────────────
 const fmt = {
