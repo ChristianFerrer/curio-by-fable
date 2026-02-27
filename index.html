@@ -22,12 +22,12 @@
   <link rel="stylesheet" href="/src/css/components.css">
   <link rel="stylesheet" href="/src/css/animations.css">
 
-  <!-- Supabase UMD sincrónico — debe estar ANTES que el script app y ANTES que Alpine -->
+  <!-- Scripts de la aplicación (orden crítico) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="/public/config.js"></script>
   <script>
-  // Crear _sb sincrónico, antes de que Alpine arranque
   (function() {
+    // 1) Crear cliente Supabase global
     var cfg = window.__CURIO_CONFIG__ || {};
     try {
       window._sb = window.supabase.createClient(
@@ -36,26 +36,28 @@
         { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }
       );
     } catch(e) {
-      console.warn('[Curio] Supabase mock activo:', e.message);
-      var _c = { select: function() { return _c; }, eq: function() { return _c; }, single: async function() { return { data: null, error: null }; } };
+      console.warn('[Curio] Supabase mock:', e.message);
+      var _c = {
+        select: function(){ return _c; }, eq: function(){ return _c; },
+        order:  function(){ return _c; }, limit:  function(){ return _c; },
+        ilike:  function(){ return _c; }, gte:    function(){ return _c; },
+        lte:    function(){ return _c; }, insert: function(){ return _c; },
+        update: function(){ return _c; }, single: function(){ return Promise.resolve({data:null,error:null}); },
+      };
       window._sb = {
         auth: {
-          getSession:         async function() { return { data: { session: null } }; },
-          onAuthStateChange:  function() {},
-          signInWithPassword: async function() { return { error: { message: 'No disponible' } }; },
-          signUp:             async function() { return { error: null, data: {} }; },
-          signOut:            async function() {},
-          signInWithOAuth:    async function() {},
+          getSession:         function() { return Promise.resolve({ data: { session: null } }); },
+          onAuthStateChange:  function()  { return { data: { subscription: { unsubscribe: function(){} } } }; },
+          signInWithPassword: function()  { return Promise.resolve({ error: { message: 'No disponible' } }); },
+          signUp:             function()  { return Promise.resolve({ error: null, data: {} }); },
+          signOut:            function()  { return Promise.resolve(); },
+          signInWithOAuth:    function()  { return Promise.resolve(); },
         },
         from: function() { return _c; },
       };
     }
-  })();
 
-  // Registrar Alpine.data ANTES de que Alpine cargue (defer)
-  // alpine:init se dispara cuando Alpine arranca — este listener ya estará registrado
-  document.addEventListener('alpine:init', function() {
-    var _sb = window._sb;
+    // 2) Helpers
     var CART_KEY    = 'curio_cart';
     var SESSION_KEY = 'curio_sid';
 
@@ -66,196 +68,342 @@
       }, { threshold: 0.1 });
       document.querySelectorAll('.reveal').forEach(function(el) { obs.observe(el); });
     }
-    function fmtPrice(n) { if (n == null || isNaN(n)) return '—'; return Number(n).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }); }
-    function fmtDate(iso) { if (!iso) return ''; return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }); }
+    function fmtPrice(n) {
+      if (n == null || isNaN(n)) return '—';
+      return Number(n).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
+    }
+    function fmtDate(iso) {
+      if (!iso) return '';
+      return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
+    }
     function fmtCategory(slug) {
       var m = { juguetes_educativos:'Juguetes Educativos', juegos_mesa:'Juegos de Mesa', decoracion_habitacion:'Decoración Habitación', mobiliario_montessori:'Mobiliario Montessori', puzzles:'Puzzles', construccion:'Construcción', exterior:'Exterior' };
       return m[slug] || slug || '';
     }
-    function fmtAge(min, max) { if (min == null) return ''; if (max >= 99) return '+' + min + ' años'; if (min === max) return min + ' años'; return min + '–' + max + ' años'; }
-    function fmtStatus(s) { var m = { pendiente:'Pendiente', procesando:'Procesando', enviado:'Enviado', entregado:'Entregado', cancelado:'Cancelado' }; return m[s] || s; }
+    function fmtAge(min, max) {
+      if (min == null) return '';
+      if (max >= 99) return '+' + min + ' años';
+      if (min === max) return min + ' años';
+      return min + '–' + max + ' años';
+    }
+    function fmtStatus(s) {
+      var m = { pendiente:'Pendiente', procesando:'Procesando', enviado:'Enviado', entregado:'Entregado', cancelado:'Cancelado' };
+      return m[s] || s;
+    }
 
-    Alpine.data('appStore', function() {
+    // 3) Factory function — Alpine la llama con x-data="app()"
+    window.app = function() {
+      var _sbL = window._sb;
       return {
-        user: null, showAuthModal: false, authView: 'login', authLoading: false, authError: '',
-        loginEmail: '', loginPassword: '', registerName: '', registerEmail: '', registerPassword: '', afterAuthRedirect: null,
-        currentView: 'home', navScrolled: false, megaMenuOpen: false, mobileMenuOpen: false,
+        // State
+        user: null,
+        showAuthModal: false, authView: 'login', authLoading: false, authError: '',
+        loginEmail: '', loginPassword: '',
+        registerName: '', registerEmail: '', registerPassword: '',
+        afterAuthRedirect: null,
+        currentView: 'home',
+        navScrolled: false, megaMenuOpen: false, mobileMenuOpen: false,
         categories: [],
-        featuredProducts: [], products: [], productsLoading: false, productsTotal: 0, productsPage: 1, productsTotalPages: 1,
+        featuredProducts: [],
+        products: [], productsLoading: false, productsTotal: 0, productsPage: 1, productsTotalPages: 1,
         filters: { category: '', search: '', sort: 'newest' }, searchQuery: '',
         currentProduct: null, currentProductLoading: false, selectedQty: 1, selectedImageIdx: 0,
         cartItems: [], cartOpen: false,
-        get cartCount()    { return this.cartItems.reduce(function(s,i){ return s+i.quantity; }, 0); },
-        get cartSubtotal() { return this.cartItems.reduce(function(s,i){ return s+i.price*i.quantity; }, 0); },
-        get cartShipping() { return this.cartSubtotal >= 50 ? 0 : 4.99; },
-        get cartTotal()    { return this.cartSubtotal + this.cartShipping; },
+        cartCount: 0, cartSubtotal: 0, cartShipping: 4.99, cartTotal: 4.99,
         checkoutStep: 1, checkoutLoading: false, lastOrderId: null,
         shippingForm: { full_name:'', address_line1:'', address_line2:'', city:'', province:'', postal_code:'', phone:'' },
         userOrders: [], ordersLoading: false,
         newsletterEmail: '', newsletterLoading: false, newsletterDone: false,
         toasts: [],
 
-        async init() {
-          try { var s = await _sb.auth.getSession(); this.user = s.data.session ? s.data.session.user : null; } catch(e) { this.user = null; }
+        // ── Init
+        init: function() {
           var self = this;
-          _sb.auth.onAuthStateChange(function(ev, session) {
+          _sbL.auth.getSession().then(function(s) {
+            self.user = (s && s.data && s.data.session) ? s.data.session.user : null;
+          }).catch(function() { self.user = null; });
+
+          _sbL.auth.onAuthStateChange(function(ev, session) {
             self.user = session ? session.user : null;
-            if (self.afterAuthRedirect && self.user) { var d = self.afterAuthRedirect; self.afterAuthRedirect = null; self.showAuthModal = false; self.navigate(d); }
+            if (self.afterAuthRedirect && self.user) {
+              var d = self.afterAuthRedirect;
+              self.afterAuthRedirect = null;
+              self.showAuthModal = false;
+              self.navigate(d);
+            }
           });
+
           this._loadCart();
           window.addEventListener('scroll', function() { self.navScrolled = window.scrollY > 20; }, { passive: true });
           this._handleRoute(location.hash);
           window.addEventListener('hashchange', function() { self._handleRoute(location.hash); });
-          await this.loadCategories();
-          setTimeout(initReveal, 300);
+          fetch('/api/categories').then(function(r){ return r.json(); })
+            .then(function(d){ self.categories = d.categories || []; })
+            .catch(function(){ self.categories = []; });
+          setTimeout(initReveal, 400);
         },
 
-        async _handleRoute(hash) {
+        // ── Router
+        _handleRoute: function(hash) {
+          var self = this;
           var path = hash.replace('#', '') || '/';
-          this._trackView(path); this.cartOpen = false; this.mobileMenuOpen = false;
-          if (path === '/' || path === '') { this.currentView = 'home'; this.loadFeaturedProducts(); }
-          else if (path === '/catalogo' || path.startsWith('/catalogo?')) {
+          this._trackView(path);
+          this.cartOpen = false;
+          this.mobileMenuOpen = false;
+
+          if (path === '/' || path === '') {
+            this.currentView = 'home';
+            this._loadFeatured();
+          } else if (path === '/catalogo' || path.startsWith('/catalogo?')) {
             this.currentView = 'catalog';
             var qp = new URLSearchParams((path.split('?')[1]) || '');
             if (qp.get('category')) this.filters.category = qp.get('category');
-            await this.loadProducts(1);
+            this.loadProducts(1);
           } else if (path.startsWith('/producto/')) {
             var slug = path.split('/producto/')[1].split('?')[0];
-            this.currentView = 'product'; this.selectedQty = 1; this.selectedImageIdx = 0;
-            await this.loadProduct(slug);
-          } else if (path === '/carrito') { this.currentView = 'cart'; }
-          else if (path === '/checkout') {
+            this.currentView = 'product';
+            this.selectedQty = 1; this.selectedImageIdx = 0;
+            this._loadProduct(slug);
+          } else if (path === '/carrito') {
+            this.currentView = 'cart';
+          } else if (path === '/checkout') {
             if (!this.user) { this.afterAuthRedirect = '/checkout'; this.showAuthModal = true; location.hash = '#/'; return; }
             this.currentView = 'checkout'; this.checkoutStep = 1;
-            try { var p = await _sb.from('profiles').select('full_name, phone').eq('id', this.user.id).single(); if (p.data && p.data.full_name) this.shippingForm.full_name = p.data.full_name; if (p.data && p.data.phone) this.shippingForm.phone = p.data.phone; } catch(e) {}
+            _sbL.from('profiles').select('full_name,phone').eq('id', this.user.id).single()
+              .then(function(p) {
+                if (p.data && p.data.full_name) self.shippingForm.full_name = p.data.full_name;
+                if (p.data && p.data.phone)     self.shippingForm.phone     = p.data.phone;
+              }).catch(function(){});
           } else if (path === '/perfil') {
             if (!this.user) { this.navigate('/'); return; }
-            this.currentView = 'profile'; await this.loadOrders();
+            this.currentView = 'profile';
+            this.loadOrders();
           } else if (path.startsWith('/pedido-confirmado/')) {
-            this.lastOrderId = path.split('/pedido-confirmado/')[1]; this.currentView = 'order-success'; setTimeout(initReveal, 100);
-          } else { this.currentView = 'home'; this.loadFeaturedProducts(); }
-          window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(initReveal, 300);
+            this.lastOrderId = path.split('/pedido-confirmado/')[1];
+            this.currentView = 'order-success';
+          } else {
+            this.currentView = 'home';
+            this._loadFeatured();
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          setTimeout(initReveal, 300);
         },
 
         navigate: function(path) { location.hash = '#' + path; },
 
-        async login() {
+        // ── Products
+        _loadFeatured: function() {
+          if (this.featuredProducts.length) return;
+          var self = this;
+          fetch('/api/products?featured=true&limit=8')
+            .then(function(r){ return r.json(); })
+            .then(function(d){ self.featuredProducts = d.products || []; })
+            .catch(function(){});
+        },
+        _loadProduct: function(slug) {
+          var self = this;
+          this.currentProduct = null; this.currentProductLoading = true;
+          fetch('/api/product?slug=' + encodeURIComponent(slug))
+            .then(function(r) { if (!r.ok) throw new Error('not found'); return r.json(); })
+            .then(function(d) { self.currentProduct = d; })
+            .catch(function() { self.toast('Producto no encontrado.', 'error'); self.navigate('/catalogo'); })
+            .finally(function() { self.currentProductLoading = false; });
+        },
+        loadProducts: function(page) {
+          var self = this;
+          page = page || 1; this.productsLoading = true; this.productsPage = page;
+          var p = new URLSearchParams({ page: String(page), limit: '20', sort: this.filters.sort });
+          if (this.filters.category) p.set('category', this.filters.category);
+          if (this.filters.search)   p.set('search',   this.filters.search);
+          fetch('/api/products?' + p.toString())
+            .then(function(r){ return r.json(); })
+            .then(function(d) { self.products = d.products || []; self.productsTotal = d.total || 0; self.productsTotalPages = d.totalPages || 1; })
+            .catch(function() { self.toast('Error cargando productos.', 'error'); })
+            .finally(function() { self.productsLoading = false; });
+        },
+        setFilter:      function(key, val) { this.filters[key] = val; this.loadProducts(1); },
+        clearFilters:   function() { this.filters = { category:'', search:'', sort:'newest' }; this.searchQuery=''; this.loadProducts(1); },
+        searchProducts: function() { this.filters.search = this.searchQuery; if (this.currentView !== 'catalog') this.navigate('/catalogo'); else this.loadProducts(1); },
+
+        // ── Auth
+        login: function() {
+          var self = this;
           if (!this.loginEmail || !this.loginPassword) { this.authError = 'Por favor, completa todos los campos.'; return; }
           this.authLoading = true; this.authError = '';
-          var r = await _sb.auth.signInWithPassword({ email: this.loginEmail.trim(), password: this.loginPassword });
-          this.authLoading = false;
-          if (r.error) { this.authError = 'Email o contraseña incorrectos.'; }
-          else { this.showAuthModal = false; this.loginEmail = ''; this.loginPassword = ''; this.toast('¡Bienvenido de vuelta!', 'success'); }
+          _sbL.auth.signInWithPassword({ email: this.loginEmail.trim(), password: this.loginPassword })
+            .then(function(r) {
+              self.authLoading = false;
+              if (r.error) { self.authError = 'Email o contraseña incorrectos.'; }
+              else { self.showAuthModal = false; self.loginEmail = ''; self.loginPassword = ''; self.toast('¡Bienvenido de vuelta!', 'success'); }
+            }).catch(function() { self.authLoading = false; self.authError = 'Error al iniciar sesión.'; });
         },
-        async register() {
+        register: function() {
+          var self = this;
           if (!this.registerName || !this.registerEmail || !this.registerPassword) { this.authError = 'Por favor, completa todos los campos.'; return; }
           if (this.registerPassword.length < 8) { this.authError = 'La contraseña debe tener al menos 8 caracteres.'; return; }
           this.authLoading = true; this.authError = '';
-          var r = await _sb.auth.signUp({ email: this.registerEmail.trim(), password: this.registerPassword, options: { data: { full_name: this.registerName.trim() } } });
-          this.authLoading = false;
-          if (r.error) { this.authError = r.error.message && r.error.message.includes('already') ? 'Este email ya está registrado.' : 'Error al registrarse.'; }
-          else { this.showAuthModal = false; this.registerName=''; this.registerEmail=''; this.registerPassword=''; this.toast('¡Registro exitoso! Revisa tu email.', 'success'); }
+          _sbL.auth.signUp({ email: this.registerEmail.trim(), password: this.registerPassword, options: { data: { full_name: this.registerName.trim() } } })
+            .then(function(r) {
+              self.authLoading = false;
+              if (r.error) { self.authError = r.error.message && r.error.message.includes('already') ? 'Este email ya está registrado.' : 'Error al registrarse.'; }
+              else { self.showAuthModal = false; self.registerName=''; self.registerEmail=''; self.registerPassword=''; self.toast('¡Registro exitoso! Revisa tu email.', 'success'); }
+            }).catch(function() { self.authLoading = false; self.authError = 'Error al registrarse.'; });
         },
-        async loginWithGoogle() { await _sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/#/' } }); },
-        async logout() { await _sb.auth.signOut(); this.navigate('/'); this.toast('Sesión cerrada.', 'info'); },
-        openLogin()    { this.authView = 'login';    this.authError = ''; this.showAuthModal = true; },
-        openRegister() { this.authView = 'register'; this.authError = ''; this.showAuthModal = true; },
+        loginWithGoogle: function() {
+          _sbL.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/#/' } });
+        },
+        logout: function() {
+          var self = this;
+          _sbL.auth.signOut().then(function() { self.navigate('/'); self.toast('Sesión cerrada.', 'info'); }).catch(function(){});
+        },
+        openLogin:    function() { this.authView = 'login';    this.authError = ''; this.showAuthModal = true; },
+        openRegister: function() { this.authView = 'register'; this.authError = ''; this.showAuthModal = true; },
+        closeModal:   function() { this.showAuthModal = false; this.authError = ''; },
 
-        async loadCategories() { try { var r = await fetch('/api/categories'); var d = await r.json(); this.categories = d.categories || []; } catch(e) { this.categories = []; } },
-        async loadFeaturedProducts() { if (this.featuredProducts.length) return; try { var r = await fetch('/api/products?featured=true&limit=8'); var d = await r.json(); this.featuredProducts = d.products || []; } catch(e) {} },
-        async loadProducts(page) {
-          page = page || 1; this.productsLoading = true; this.productsPage = page;
-          try {
-            var p = new URLSearchParams({ page: String(page), limit: '20', sort: this.filters.sort });
-            if (this.filters.category) p.set('category', this.filters.category);
-            if (this.filters.search)   p.set('search', this.filters.search);
-            var r = await fetch('/api/products?' + p.toString()); var d = await r.json();
-            this.products = d.products || []; this.productsTotal = d.total || 0; this.productsTotalPages = d.totalPages || 1;
-          } catch(e) { this.toast('Error cargando productos.', 'error'); } finally { this.productsLoading = false; }
+        // ── Cart
+        _updateCartTotals: function() {
+          this.cartCount    = this.cartItems.reduce(function(s,i){ return s+i.quantity; }, 0);
+          this.cartSubtotal = this.cartItems.reduce(function(s,i){ return s+i.price*i.quantity; }, 0);
+          this.cartShipping = this.cartSubtotal >= 50 ? 0 : 4.99;
+          this.cartTotal    = this.cartSubtotal + this.cartShipping;
         },
-        async loadProduct(slug) {
-          this.currentProduct = null; this.currentProductLoading = true;
-          try { var r = await fetch('/api/product?slug=' + encodeURIComponent(slug)); if (!r.ok) throw new Error('not found'); this.currentProduct = await r.json(); }
-          catch(e) { this.toast('Producto no encontrado.', 'error'); this.navigate('/catalogo'); } finally { this.currentProductLoading = false; }
-        },
-        setFilter: function(key, val) { this.filters[key] = val; this.loadProducts(1); },
-        clearFilters: function() { this.filters = { category:'', search:'', sort:'newest' }; this.searchQuery=''; this.loadProducts(1); },
-        searchProducts: function() { this.filters.search = this.searchQuery; if (this.currentView !== 'catalog') this.navigate('/catalogo'); else this.loadProducts(1); },
-
         addToCart: function(product, qty) {
           qty = Math.max(1, parseInt(qty) || 1);
           var ex = this.cartItems.find(function(i){ return i.product_id === product.id; });
-          if (ex) { ex.quantity += qty; } else { this.cartItems.push({ product_id: product.id, name: product.name, slug: product.slug, price: product.price, image_url: (product.images && product.images[0]) || null, quantity: qty }); }
-          this._saveCart(); this.toast(product.name + ' añadido al carrito 🛒', 'success'); this.cartOpen = true;
+          if (ex) { ex.quantity += qty; }
+          else { this.cartItems.push({ product_id: product.id, name: product.name, slug: product.slug, price: product.price, image_url: (product.images && product.images[0]) || null, quantity: qty }); }
+          this._saveCart(); this._updateCartTotals();
+          this.toast(product.name + ' añadido al carrito 🛒', 'success');
+          this.cartOpen = true;
         },
-        removeFromCart: function(pid) { this.cartItems = this.cartItems.filter(function(i){ return i.product_id !== pid; }); this._saveCart(); },
-        incrementQty: function(pid) { var it = this.cartItems.find(function(i){ return i.product_id === pid; }); if (it) { it.quantity++; this._saveCart(); } },
-        decrementQty: function(pid) { var it = this.cartItems.find(function(i){ return i.product_id === pid; }); if (!it) return; if (it.quantity <= 1) this.removeFromCart(pid); else { it.quantity--; this._saveCart(); } },
-        _saveCart: function() { try { localStorage.setItem(CART_KEY, JSON.stringify(this.cartItems)); } catch(e) {} },
-        _loadCart: function() { try { var raw = localStorage.getItem(CART_KEY); if (raw) this.cartItems = JSON.parse(raw); } catch(e) {} },
-        clearCart:  function() { this.cartItems = []; localStorage.removeItem(CART_KEY); },
-        goToCheckout: function() { this.cartOpen = false; if (!this.user) { this.afterAuthRedirect = '/checkout'; this.openLogin(); return; } this.navigate('/checkout'); },
+        removeFromCart: function(pid) {
+          this.cartItems = this.cartItems.filter(function(i){ return i.product_id !== pid; });
+          this._saveCart(); this._updateCartTotals();
+        },
+        incrementQty: function(pid) {
+          var it = this.cartItems.find(function(i){ return i.product_id === pid; });
+          if (it) { it.quantity++; this._saveCart(); this._updateCartTotals(); }
+        },
+        decrementQty: function(pid) {
+          var it = this.cartItems.find(function(i){ return i.product_id === pid; });
+          if (!it) return;
+          if (it.quantity <= 1) this.removeFromCart(pid);
+          else { it.quantity--; this._saveCart(); this._updateCartTotals(); }
+        },
+        _saveCart:  function() { try { localStorage.setItem(CART_KEY, JSON.stringify(this.cartItems)); } catch(e) {} },
+        _loadCart:  function() { try { var raw = localStorage.getItem(CART_KEY); if (raw) { this.cartItems = JSON.parse(raw); this._updateCartTotals(); } } catch(e) {} },
+        clearCart:  function() { this.cartItems = []; localStorage.removeItem(CART_KEY); this._updateCartTotals(); },
+        goToCheckout: function() {
+          this.cartOpen = false;
+          if (!this.user) { this.afterAuthRedirect = '/checkout'; this.openLogin(); return; }
+          this.navigate('/checkout');
+        },
 
+        // ── Checkout
         validateShipping: function() {
           var f = this.shippingForm;
           if (!f.full_name || !f.address_line1 || !f.city || !f.postal_code || !f.phone) { this.toast('Completa todos los campos obligatorios.', 'error'); return false; }
-          if (!/^\d{5}$/.test(f.postal_code)) { this.toast('Código postal debe tener 5 dígitos.', 'error'); return false; }
+          if (!/^d{5}$/.test(f.postal_code)) { this.toast('Código postal debe tener 5 dígitos.', 'error'); return false; }
           return true;
         },
         goToConfirm: function() { if (this.validateShipping()) this.checkoutStep = 2; },
-        async submitOrder() {
+        submitOrder: function() {
+          var self = this;
           if (!this.user) { this.openLogin(); return; }
           if (!this.cartItems.length) { this.toast('El carrito está vacío.', 'error'); return; }
           this.checkoutLoading = true;
-          try {
-            var s = await _sb.auth.getSession(); var token = s.data.session ? s.data.session.access_token : '';
-            var r = await fetch('/api/orders', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body: JSON.stringify({ items: this.cartItems.map(function(i){ return { product_id:i.product_id, quantity:i.quantity }; }), shipping_address: this.shippingForm }) });
-            var d = await r.json(); if (!r.ok) throw new Error(d.error || 'Error al procesar el pedido.');
-            this.clearCart(); this.navigate('/pedido-confirmado/' + d.order_id);
-          } catch(e) { this.toast(e.message, 'error'); } finally { this.checkoutLoading = false; }
+          _sbL.auth.getSession().then(function(s) {
+            var token = (s && s.data && s.data.session) ? s.data.session.access_token : '';
+            return fetch('/api/orders', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+              body: JSON.stringify({
+                items: self.cartItems.map(function(i){ return { product_id: i.product_id, quantity: i.quantity }; }),
+                shipping_address: self.shippingForm
+              })
+            });
+          }).then(function(r) {
+            return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || 'Error'); return d; });
+          }).then(function(d) {
+            self.clearCart(); self.navigate('/pedido-confirmado/' + d.order_id);
+          }).catch(function(e) {
+            self.toast(e.message, 'error');
+          }).finally(function() { self.checkoutLoading = false; });
         },
 
-        async loadOrders() {
+        // ── Orders
+        loadOrders: function() {
+          var self = this;
           this.ordersLoading = true;
-          try { var s = await _sb.auth.getSession(); var token = s.data.session ? s.data.session.access_token : ''; var r = await fetch('/api/orders', { headers: { 'Authorization': 'Bearer ' + token } }); var d = await r.json(); this.userOrders = d.orders || []; }
-          catch(e) {} finally { this.ordersLoading = false; }
+          _sbL.auth.getSession().then(function(s) {
+            var token = (s && s.data && s.data.session) ? s.data.session.access_token : '';
+            return fetch('/api/orders', { headers: { 'Authorization': 'Bearer ' + token } });
+          }).then(function(r){ return r.json(); })
+          .then(function(d){ self.userOrders = d.orders || []; })
+          .catch(function(){})
+          .finally(function(){ self.ordersLoading = false; });
         },
 
-        async subscribeNewsletter() {
+        // ── Newsletter
+        subscribeNewsletter: function() {
+          var self = this;
           if (!this.newsletterEmail || !this.newsletterEmail.includes('@')) { this.toast('Introduce un email válido.', 'error'); return; }
           this.newsletterLoading = true;
-          try { var r = await fetch('/api/newsletter', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: this.newsletterEmail }) }); var d = await r.json(); if (d.already) { this.toast('Este email ya está suscrito 😊', 'info'); } else { this.newsletterDone = true; this.newsletterEmail = ''; this.toast('¡Gracias! Te has suscrito.', 'success'); } }
-          catch(e) { this.toast('Error al suscribirse.', 'error'); } finally { this.newsletterLoading = false; }
+          fetch('/api/newsletter', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: this.newsletterEmail }) })
+            .then(function(r){ return r.json(); })
+            .then(function(d) {
+              if (d.already) { self.toast('Este email ya está suscrito 😊', 'info'); }
+              else { self.newsletterDone = true; self.newsletterEmail = ''; self.toast('¡Gracias! Te has suscrito.', 'success'); }
+            }).catch(function() { self.toast('Error al suscribirse.', 'error'); })
+            .finally(function() { self.newsletterLoading = false; });
         },
 
+        // ── Track view
         _trackView: function(page) {
           var sid = sessionStorage.getItem(SESSION_KEY);
-          if (!sid) { sid = (crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2); sessionStorage.setItem(SESSION_KEY, sid); }
-          fetch('/api/track-view', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ page: page, session_id: sid, user_id: this.user ? this.user.id : null }) }).catch(function(){});
+          if (!sid) {
+            sid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+            sessionStorage.setItem(SESSION_KEY, sid);
+          }
+          fetch('/api/track-view', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ page: page, session_id: sid, user_id: this.user ? this.user.id : null })
+          }).catch(function(){});
         },
 
+        // ── Toasts
         toast: function(msg, type) {
-          type = type || 'info'; var id = Date.now() + Math.random(); var t = { id: id, message: msg, type: type, visible: true }; this.toasts.push(t);
+          type = type || 'info';
+          var id  = Date.now() + Math.random();
+          var t   = { id: id, message: msg, type: type, visible: true };
+          this.toasts.push(t);
           var self = this;
-          setTimeout(function() { t.visible = false; setTimeout(function() { self.toasts = self.toasts.filter(function(x){ return x.id !== id; }); }, 400); }, 3800);
+          setTimeout(function() {
+            t.visible = false;
+            setTimeout(function() { self.toasts = self.toasts.filter(function(x){ return x.id !== id; }); }, 400);
+          }, 3800);
         },
 
-        formatPrice:    function(n)       { return fmtPrice(n); },
-        formatDate:     function(iso)     { return fmtDate(iso); },
-        formatCategory: function(slug)    { return fmtCategory(slug); },
-        formatAge:      function(min,max) { return fmtAge(min, max); },
-        formatStatus:   function(s)       { return fmtStatus(s); },
-        discountPct:    function(price, compare) { if (!compare || compare <= price) return 0; return Math.round((1 - price/compare) * 100); },
+        // ── Format helpers
+        formatPrice:    function(n)         { return fmtPrice(n); },
+        formatDate:     function(iso)       { return fmtDate(iso); },
+        formatCategory: function(slug)      { return fmtCategory(slug); },
+        formatAge:      function(min, max)  { return fmtAge(min, max); },
+        formatStatus:   function(s)         { return fmtStatus(s); },
+        discountPct:    function(price, compare) {
+          if (!compare || compare <= price) return 0;
+          return Math.round((1 - price / compare) * 100);
+        },
       };
-    });
-  });
+    };
+  })();
   </script>
-
-  <!-- Alpine con defer — ejecuta después del DOM, encontrará el listener alpine:init ya registrado -->
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- Alpine.js v3.14.1 con defer — window.app() ya está definido cuando Alpine inicialice -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 </head>
 <body>
-<div x-data="appStore" x-cloak>
+<div x-data="app()" x-cloak>
 
   <!-- ═══════════════════════════════════════════════════════
        NAVIGATION
