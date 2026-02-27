@@ -1400,13 +1400,9 @@
   <!-- ═══════════════════════════════════════════════════════
        CART DRAWER
   ═══════════════════════════════════════════════════════ -->
-  <div class="cart-overlay" x-show="cartOpen" @click="cartOpen=false"
-       x-transition:enter="overlay-enter" x-transition:enter-from="overlay-enter-from" x-transition:enter-to="overlay-enter-to"
-       x-transition:leave="overlay-leave" x-transition:leave-to="overlay-leave-to"></div>
+  <div class="cart-overlay" x-show="cartOpen" style="display:none" @click="cartOpen=false"
 
   <aside class="cart-drawer" x-show="cartOpen" style="display:none"
-         x-transition:enter="drawer-enter" x-transition:enter-from="drawer-start" x-transition:enter-to="drawer-end"
-         x-transition:leave="drawer-leave" x-transition:leave-to="drawer-leave-to">
     <div class="cart-drawer-header">
       <span class="cart-drawer-title">
         <svg style="width:22px;height:22px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
@@ -1466,12 +1462,8 @@
   <!-- ═══════════════════════════════════════════════════════
        AUTH MODAL
   ═══════════════════════════════════════════════════════ -->
-  <div class="modal-overlay" x-show="showAuthModal" @click.self="closeModal()"
-       x-transition:enter="overlay-enter" x-transition:enter-from="overlay-enter-from" x-transition:enter-to="overlay-enter-to"
-       x-transition:leave="overlay-leave" x-transition:leave-to="overlay-leave-to">
+  <div class="modal-overlay" x-show="showAuthModal" style="display:none" @click.self="closeModal()"
     <div class="modal"
-         x-transition:enter="modal-enter" x-transition:enter-from="modal-enter-from" x-transition:enter-to="modal-enter-to"
-         x-transition:leave="modal-leave" x-transition:leave-to="modal-leave-to">
       <button class="modal-close" @click="showAuthModal=false">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
@@ -1547,8 +1539,6 @@
   <div class="toast-container">
     <template x-for="t in toasts" :key="t.id">
       <div class="toast" :class="'toast-' + t.type" x-show="t.visible"
-           x-transition:enter="toast-enter" x-transition:enter-from="toast-enter-from" x-transition:enter-to="toast-enter-to"
-           x-transition:leave="toast-leave" x-transition:leave-to="toast-leave-to">
         <span x-text="t.message"></span>
       </div>
     </template>
