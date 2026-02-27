@@ -21,6 +21,238 @@
   <link rel="stylesheet" href="/src/css/main.css">
   <link rel="stylesheet" href="/src/css/components.css">
   <link rel="stylesheet" href="/src/css/animations.css">
+
+  <!-- Supabase UMD sincrónico — debe estar ANTES que el script app y ANTES que Alpine -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="/public/config.js"></script>
+  <script>
+  // Crear _sb sincrónico, antes de que Alpine arranque
+  (function() {
+    var cfg = window.__CURIO_CONFIG__ || {};
+    try {
+      window._sb = window.supabase.createClient(
+        cfg.supabaseUrl  || '',
+        cfg.supabaseAnon || '',
+        { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }
+      );
+    } catch(e) {
+      console.warn('[Curio] Supabase mock activo:', e.message);
+      var _c = { select: function() { return _c; }, eq: function() { return _c; }, single: async function() { return { data: null, error: null }; } };
+      window._sb = {
+        auth: {
+          getSession:         async function() { return { data: { session: null } }; },
+          onAuthStateChange:  function() {},
+          signInWithPassword: async function() { return { error: { message: 'No disponible' } }; },
+          signUp:             async function() { return { error: null, data: {} }; },
+          signOut:            async function() {},
+          signInWithOAuth:    async function() {},
+        },
+        from: function() { return _c; },
+      };
+    }
+  })();
+
+  // Registrar Alpine.data ANTES de que Alpine cargue (defer)
+  // alpine:init se dispara cuando Alpine arranca — este listener ya estará registrado
+  document.addEventListener('alpine:init', function() {
+    var _sb = window._sb;
+    var CART_KEY    = 'curio_cart';
+    var SESSION_KEY = 'curio_sid';
+
+    function initReveal() {
+      if (!('IntersectionObserver' in window)) return;
+      var obs = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) { if (e.isIntersecting) { e.target.classList.add('revealed'); obs.unobserve(e.target); } });
+      }, { threshold: 0.1 });
+      document.querySelectorAll('.reveal').forEach(function(el) { obs.observe(el); });
+    }
+    function fmtPrice(n) { if (n == null || isNaN(n)) return '—'; return Number(n).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }); }
+    function fmtDate(iso) { if (!iso) return ''; return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }); }
+    function fmtCategory(slug) {
+      var m = { juguetes_educativos:'Juguetes Educativos', juegos_mesa:'Juegos de Mesa', decoracion_habitacion:'Decoración Habitación', mobiliario_montessori:'Mobiliario Montessori', puzzles:'Puzzles', construccion:'Construcción', exterior:'Exterior' };
+      return m[slug] || slug || '';
+    }
+    function fmtAge(min, max) { if (min == null) return ''; if (max >= 99) return '+' + min + ' años'; if (min === max) return min + ' años'; return min + '–' + max + ' años'; }
+    function fmtStatus(s) { var m = { pendiente:'Pendiente', procesando:'Procesando', enviado:'Enviado', entregado:'Entregado', cancelado:'Cancelado' }; return m[s] || s; }
+
+    Alpine.data('appStore', function() {
+      return {
+        user: null, showAuthModal: false, authView: 'login', authLoading: false, authError: '',
+        loginEmail: '', loginPassword: '', registerName: '', registerEmail: '', registerPassword: '', afterAuthRedirect: null,
+        currentView: 'home', navScrolled: false, megaMenuOpen: false, mobileMenuOpen: false,
+        categories: [],
+        featuredProducts: [], products: [], productsLoading: false, productsTotal: 0, productsPage: 1, productsTotalPages: 1,
+        filters: { category: '', search: '', sort: 'newest' }, searchQuery: '',
+        currentProduct: null, currentProductLoading: false, selectedQty: 1, selectedImageIdx: 0,
+        cartItems: [], cartOpen: false,
+        get cartCount()    { return this.cartItems.reduce(function(s,i){ return s+i.quantity; }, 0); },
+        get cartSubtotal() { return this.cartItems.reduce(function(s,i){ return s+i.price*i.quantity; }, 0); },
+        get cartShipping() { return this.cartSubtotal >= 50 ? 0 : 4.99; },
+        get cartTotal()    { return this.cartSubtotal + this.cartShipping; },
+        checkoutStep: 1, checkoutLoading: false, lastOrderId: null,
+        shippingForm: { full_name:'', address_line1:'', address_line2:'', city:'', province:'', postal_code:'', phone:'' },
+        userOrders: [], ordersLoading: false,
+        newsletterEmail: '', newsletterLoading: false, newsletterDone: false,
+        toasts: [],
+
+        async init() {
+          try { var s = await _sb.auth.getSession(); this.user = s.data.session ? s.data.session.user : null; } catch(e) { this.user = null; }
+          var self = this;
+          _sb.auth.onAuthStateChange(function(ev, session) {
+            self.user = session ? session.user : null;
+            if (self.afterAuthRedirect && self.user) { var d = self.afterAuthRedirect; self.afterAuthRedirect = null; self.showAuthModal = false; self.navigate(d); }
+          });
+          this._loadCart();
+          window.addEventListener('scroll', function() { self.navScrolled = window.scrollY > 20; }, { passive: true });
+          this._handleRoute(location.hash);
+          window.addEventListener('hashchange', function() { self._handleRoute(location.hash); });
+          await this.loadCategories();
+          setTimeout(initReveal, 300);
+        },
+
+        async _handleRoute(hash) {
+          var path = hash.replace('#', '') || '/';
+          this._trackView(path); this.cartOpen = false; this.mobileMenuOpen = false;
+          if (path === '/' || path === '') { this.currentView = 'home'; this.loadFeaturedProducts(); }
+          else if (path === '/catalogo' || path.startsWith('/catalogo?')) {
+            this.currentView = 'catalog';
+            var qp = new URLSearchParams((path.split('?')[1]) || '');
+            if (qp.get('category')) this.filters.category = qp.get('category');
+            await this.loadProducts(1);
+          } else if (path.startsWith('/producto/')) {
+            var slug = path.split('/producto/')[1].split('?')[0];
+            this.currentView = 'product'; this.selectedQty = 1; this.selectedImageIdx = 0;
+            await this.loadProduct(slug);
+          } else if (path === '/carrito') { this.currentView = 'cart'; }
+          else if (path === '/checkout') {
+            if (!this.user) { this.afterAuthRedirect = '/checkout'; this.showAuthModal = true; location.hash = '#/'; return; }
+            this.currentView = 'checkout'; this.checkoutStep = 1;
+            try { var p = await _sb.from('profiles').select('full_name, phone').eq('id', this.user.id).single(); if (p.data && p.data.full_name) this.shippingForm.full_name = p.data.full_name; if (p.data && p.data.phone) this.shippingForm.phone = p.data.phone; } catch(e) {}
+          } else if (path === '/perfil') {
+            if (!this.user) { this.navigate('/'); return; }
+            this.currentView = 'profile'; await this.loadOrders();
+          } else if (path.startsWith('/pedido-confirmado/')) {
+            this.lastOrderId = path.split('/pedido-confirmado/')[1]; this.currentView = 'order-success'; setTimeout(initReveal, 100);
+          } else { this.currentView = 'home'; this.loadFeaturedProducts(); }
+          window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(initReveal, 300);
+        },
+
+        navigate: function(path) { location.hash = '#' + path; },
+
+        async login() {
+          if (!this.loginEmail || !this.loginPassword) { this.authError = 'Por favor, completa todos los campos.'; return; }
+          this.authLoading = true; this.authError = '';
+          var r = await _sb.auth.signInWithPassword({ email: this.loginEmail.trim(), password: this.loginPassword });
+          this.authLoading = false;
+          if (r.error) { this.authError = 'Email o contraseña incorrectos.'; }
+          else { this.showAuthModal = false; this.loginEmail = ''; this.loginPassword = ''; this.toast('¡Bienvenido de vuelta!', 'success'); }
+        },
+        async register() {
+          if (!this.registerName || !this.registerEmail || !this.registerPassword) { this.authError = 'Por favor, completa todos los campos.'; return; }
+          if (this.registerPassword.length < 8) { this.authError = 'La contraseña debe tener al menos 8 caracteres.'; return; }
+          this.authLoading = true; this.authError = '';
+          var r = await _sb.auth.signUp({ email: this.registerEmail.trim(), password: this.registerPassword, options: { data: { full_name: this.registerName.trim() } } });
+          this.authLoading = false;
+          if (r.error) { this.authError = r.error.message && r.error.message.includes('already') ? 'Este email ya está registrado.' : 'Error al registrarse.'; }
+          else { this.showAuthModal = false; this.registerName=''; this.registerEmail=''; this.registerPassword=''; this.toast('¡Registro exitoso! Revisa tu email.', 'success'); }
+        },
+        async loginWithGoogle() { await _sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/#/' } }); },
+        async logout() { await _sb.auth.signOut(); this.navigate('/'); this.toast('Sesión cerrada.', 'info'); },
+        openLogin()    { this.authView = 'login';    this.authError = ''; this.showAuthModal = true; },
+        openRegister() { this.authView = 'register'; this.authError = ''; this.showAuthModal = true; },
+
+        async loadCategories() { try { var r = await fetch('/api/categories'); var d = await r.json(); this.categories = d.categories || []; } catch(e) { this.categories = []; } },
+        async loadFeaturedProducts() { if (this.featuredProducts.length) return; try { var r = await fetch('/api/products?featured=true&limit=8'); var d = await r.json(); this.featuredProducts = d.products || []; } catch(e) {} },
+        async loadProducts(page) {
+          page = page || 1; this.productsLoading = true; this.productsPage = page;
+          try {
+            var p = new URLSearchParams({ page: String(page), limit: '20', sort: this.filters.sort });
+            if (this.filters.category) p.set('category', this.filters.category);
+            if (this.filters.search)   p.set('search', this.filters.search);
+            var r = await fetch('/api/products?' + p.toString()); var d = await r.json();
+            this.products = d.products || []; this.productsTotal = d.total || 0; this.productsTotalPages = d.totalPages || 1;
+          } catch(e) { this.toast('Error cargando productos.', 'error'); } finally { this.productsLoading = false; }
+        },
+        async loadProduct(slug) {
+          this.currentProduct = null; this.currentProductLoading = true;
+          try { var r = await fetch('/api/product?slug=' + encodeURIComponent(slug)); if (!r.ok) throw new Error('not found'); this.currentProduct = await r.json(); }
+          catch(e) { this.toast('Producto no encontrado.', 'error'); this.navigate('/catalogo'); } finally { this.currentProductLoading = false; }
+        },
+        setFilter: function(key, val) { this.filters[key] = val; this.loadProducts(1); },
+        clearFilters: function() { this.filters = { category:'', search:'', sort:'newest' }; this.searchQuery=''; this.loadProducts(1); },
+        searchProducts: function() { this.filters.search = this.searchQuery; if (this.currentView !== 'catalog') this.navigate('/catalogo'); else this.loadProducts(1); },
+
+        addToCart: function(product, qty) {
+          qty = Math.max(1, parseInt(qty) || 1);
+          var ex = this.cartItems.find(function(i){ return i.product_id === product.id; });
+          if (ex) { ex.quantity += qty; } else { this.cartItems.push({ product_id: product.id, name: product.name, slug: product.slug, price: product.price, image_url: (product.images && product.images[0]) || null, quantity: qty }); }
+          this._saveCart(); this.toast(product.name + ' añadido al carrito 🛒', 'success'); this.cartOpen = true;
+        },
+        removeFromCart: function(pid) { this.cartItems = this.cartItems.filter(function(i){ return i.product_id !== pid; }); this._saveCart(); },
+        incrementQty: function(pid) { var it = this.cartItems.find(function(i){ return i.product_id === pid; }); if (it) { it.quantity++; this._saveCart(); } },
+        decrementQty: function(pid) { var it = this.cartItems.find(function(i){ return i.product_id === pid; }); if (!it) return; if (it.quantity <= 1) this.removeFromCart(pid); else { it.quantity--; this._saveCart(); } },
+        _saveCart: function() { try { localStorage.setItem(CART_KEY, JSON.stringify(this.cartItems)); } catch(e) {} },
+        _loadCart: function() { try { var raw = localStorage.getItem(CART_KEY); if (raw) this.cartItems = JSON.parse(raw); } catch(e) {} },
+        clearCart:  function() { this.cartItems = []; localStorage.removeItem(CART_KEY); },
+        goToCheckout: function() { this.cartOpen = false; if (!this.user) { this.afterAuthRedirect = '/checkout'; this.openLogin(); return; } this.navigate('/checkout'); },
+
+        validateShipping: function() {
+          var f = this.shippingForm;
+          if (!f.full_name || !f.address_line1 || !f.city || !f.postal_code || !f.phone) { this.toast('Completa todos los campos obligatorios.', 'error'); return false; }
+          if (!/^\d{5}$/.test(f.postal_code)) { this.toast('Código postal debe tener 5 dígitos.', 'error'); return false; }
+          return true;
+        },
+        goToConfirm: function() { if (this.validateShipping()) this.checkoutStep = 2; },
+        async submitOrder() {
+          if (!this.user) { this.openLogin(); return; }
+          if (!this.cartItems.length) { this.toast('El carrito está vacío.', 'error'); return; }
+          this.checkoutLoading = true;
+          try {
+            var s = await _sb.auth.getSession(); var token = s.data.session ? s.data.session.access_token : '';
+            var r = await fetch('/api/orders', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body: JSON.stringify({ items: this.cartItems.map(function(i){ return { product_id:i.product_id, quantity:i.quantity }; }), shipping_address: this.shippingForm }) });
+            var d = await r.json(); if (!r.ok) throw new Error(d.error || 'Error al procesar el pedido.');
+            this.clearCart(); this.navigate('/pedido-confirmado/' + d.order_id);
+          } catch(e) { this.toast(e.message, 'error'); } finally { this.checkoutLoading = false; }
+        },
+
+        async loadOrders() {
+          this.ordersLoading = true;
+          try { var s = await _sb.auth.getSession(); var token = s.data.session ? s.data.session.access_token : ''; var r = await fetch('/api/orders', { headers: { 'Authorization': 'Bearer ' + token } }); var d = await r.json(); this.userOrders = d.orders || []; }
+          catch(e) {} finally { this.ordersLoading = false; }
+        },
+
+        async subscribeNewsletter() {
+          if (!this.newsletterEmail || !this.newsletterEmail.includes('@')) { this.toast('Introduce un email válido.', 'error'); return; }
+          this.newsletterLoading = true;
+          try { var r = await fetch('/api/newsletter', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: this.newsletterEmail }) }); var d = await r.json(); if (d.already) { this.toast('Este email ya está suscrito 😊', 'info'); } else { this.newsletterDone = true; this.newsletterEmail = ''; this.toast('¡Gracias! Te has suscrito.', 'success'); } }
+          catch(e) { this.toast('Error al suscribirse.', 'error'); } finally { this.newsletterLoading = false; }
+        },
+
+        _trackView: function(page) {
+          var sid = sessionStorage.getItem(SESSION_KEY);
+          if (!sid) { sid = (crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2); sessionStorage.setItem(SESSION_KEY, sid); }
+          fetch('/api/track-view', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ page: page, session_id: sid, user_id: this.user ? this.user.id : null }) }).catch(function(){});
+        },
+
+        toast: function(msg, type) {
+          type = type || 'info'; var id = Date.now() + Math.random(); var t = { id: id, message: msg, type: type, visible: true }; this.toasts.push(t);
+          var self = this;
+          setTimeout(function() { t.visible = false; setTimeout(function() { self.toasts = self.toasts.filter(function(x){ return x.id !== id; }); }, 400); }, 3800);
+        },
+
+        formatPrice:    function(n)       { return fmtPrice(n); },
+        formatDate:     function(iso)     { return fmtDate(iso); },
+        formatCategory: function(slug)    { return fmtCategory(slug); },
+        formatAge:      function(min,max) { return fmtAge(min, max); },
+        formatStatus:   function(s)       { return fmtStatus(s); },
+        discountPct:    function(price, compare) { if (!compare || compare <= price) return 0; return Math.round((1 - price/compare) * 100); },
+      };
+    });
+  });
+  </script>
+
+  <!-- Alpine con defer — ejecuta después del DOM, encontrará el listener alpine:init ya registrado -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body>
 <div x-data="appStore" x-cloak>
@@ -925,377 +1157,5 @@
   </footer>
 
 </div><!-- /x-data -->
-
-<!-- Alpine PRIMERO con defer, luego Supabase + config sincrónicos, luego app inline -->
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/public/config.js"></script>
-<script>
-// Crear cliente Supabase de forma segura
-(function() {
-  var _cfg = window.__CURIO_CONFIG__ || {};
-  try {
-    window._sb = window.supabase.createClient(
-      _cfg.supabaseUrl  || '',
-      _cfg.supabaseAnon || '',
-      { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }
-    );
-  } catch(e) {
-    console.warn('[Curio] Supabase no disponible:', e.message);
-    window._sb = {
-      auth: {
-        getSession:         async function() { return { data: { session: null } }; },
-        onAuthStateChange:  function() {},
-        signInWithPassword: async function() { return { error: { message: 'No disponible' } }; },
-        signUp:             async function() { return { error: null, data: {} }; },
-        signOut:            async function() {},
-        signInWithOAuth:    async function() {},
-      },
-      from: function() {
-        var c = { select: function() { return c; }, eq: function() { return c; }, single: async function() { return { data: null, error: null }; } };
-        return c;
-      },
-    };
-  }
-})();
-
-// Registrar el componente Alpine cuando Alpine esté listo
-document.addEventListener('alpine:init', function() {
-  var _sb = window._sb;
-
-  var CART_KEY    = 'curio_cart';
-  var SESSION_KEY = 'curio_sid';
-
-  function initReveal() {
-    if (!('IntersectionObserver' in window)) return;
-    var obs = new IntersectionObserver(function(entries) {
-      entries.forEach(function(e) { if (e.isIntersecting) { e.target.classList.add('revealed'); obs.unobserve(e.target); } });
-    }, { threshold: 0.1 });
-    document.querySelectorAll('.reveal').forEach(function(el) { obs.observe(el); });
-  }
-
-  function fmtPrice(n) {
-    if (n == null || isNaN(n)) return '—';
-    return Number(n).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
-  }
-  function fmtDate(iso) {
-    if (!iso) return '';
-    return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
-  }
-  function fmtCategory(slug) {
-    var map = {
-      juguetes_educativos: 'Juguetes Educativos', juegos_mesa: 'Juegos de Mesa',
-      decoracion_habitacion: 'Decoración Habitación', mobiliario_montessori: 'Mobiliario Montessori',
-      puzzles: 'Puzzles', construccion: 'Construcción', exterior: 'Exterior',
-    };
-    return map[slug] || slug || '';
-  }
-  function fmtAge(min, max) {
-    if (min == null) return '';
-    if (max >= 99) return '+' + min + ' años';
-    if (min === max) return min + ' años';
-    return min + '–' + max + ' años';
-  }
-  function fmtStatus(s) {
-    var map = { pendiente: 'Pendiente', procesando: 'Procesando', enviado: 'Enviado', entregado: 'Entregado', cancelado: 'Cancelado' };
-    return map[s] || s;
-  }
-
-  Alpine.data('appStore', function() {
-    return {
-      // ── Auth
-      user: null,
-      showAuthModal: false,
-      authView: 'login',
-      authLoading: false,
-      authError: '',
-      loginEmail: '', loginPassword: '',
-      registerName: '', registerEmail: '', registerPassword: '',
-      afterAuthRedirect: null,
-
-      // ── Nav
-      currentView: 'home',
-      navScrolled: false,
-      megaMenuOpen: false,
-      mobileMenuOpen: false,
-
-      // ── Categories
-      categories: [],
-
-      // ── Products
-      featuredProducts: [],
-      products: [],
-      productsLoading: false,
-      productsTotal: 0,
-      productsPage: 1,
-      productsTotalPages: 1,
-      filters: { category: '', search: '', sort: 'newest' },
-      searchQuery: '',
-
-      // ── Product detail
-      currentProduct: null,
-      currentProductLoading: false,
-      selectedQty: 1,
-      selectedImageIdx: 0,
-
-      // ── Cart
-      cartItems: [],
-      cartOpen: false,
-      get cartCount()    { return this.cartItems.reduce(function(s,i){ return s+i.quantity; }, 0); },
-      get cartSubtotal() { return this.cartItems.reduce(function(s,i){ return s+i.price*i.quantity; }, 0); },
-      get cartShipping() { return this.cartSubtotal >= 50 ? 0 : 4.99; },
-      get cartTotal()    { return this.cartSubtotal + this.cartShipping; },
-
-      // ── Checkout
-      checkoutStep: 1,
-      checkoutLoading: false,
-      lastOrderId: null,
-      shippingForm: { full_name:'', address_line1:'', address_line2:'', city:'', province:'', postal_code:'', phone:'' },
-
-      // ── Profile
-      userOrders: [],
-      ordersLoading: false,
-
-      // ── Newsletter
-      newsletterEmail: '',
-      newsletterLoading: false,
-      newsletterDone: false,
-
-      // ── Toasts
-      toasts: [],
-
-      // ════════════════
-      // INIT
-      // ════════════════
-      async init() {
-        try {
-          var s = await _sb.auth.getSession();
-          this.user = s.data.session ? s.data.session.user : null;
-        } catch(e) { this.user = null; }
-
-        var self = this;
-        _sb.auth.onAuthStateChange(function(ev, session) {
-          self.user = session ? session.user : null;
-          if (self.afterAuthRedirect && self.user) {
-            var dest = self.afterAuthRedirect;
-            self.afterAuthRedirect = null;
-            self.showAuthModal = false;
-            self.navigate(dest);
-          }
-        });
-
-        this._loadCart();
-
-        window.addEventListener('scroll', function() { self.navScrolled = window.scrollY > 20; }, { passive: true });
-
-        this._handleRoute(location.hash);
-        window.addEventListener('hashchange', function() { self._handleRoute(location.hash); });
-
-        await this.loadCategories();
-        setTimeout(initReveal, 300);
-      },
-
-      // ── Router
-      async _handleRoute(hash) {
-        var path = hash.replace('#', '') || '/';
-        this._trackView(path);
-        this.cartOpen = false;
-        this.mobileMenuOpen = false;
-
-        if (path === '/' || path === '') {
-          this.currentView = 'home';
-          this.loadFeaturedProducts();
-        } else if (path === '/catalogo' || path.startsWith('/catalogo?')) {
-          this.currentView = 'catalog';
-          var qp = new URLSearchParams((path.split('?')[1]) || '');
-          if (qp.get('category')) this.filters.category = qp.get('category');
-          await this.loadProducts(1);
-        } else if (path.startsWith('/producto/')) {
-          var slug = path.split('/producto/')[1].split('?')[0];
-          this.currentView = 'product';
-          this.selectedQty = 1; this.selectedImageIdx = 0;
-          await this.loadProduct(slug);
-        } else if (path === '/carrito') {
-          this.currentView = 'cart';
-        } else if (path === '/checkout') {
-          if (!this.user) { this.afterAuthRedirect = '/checkout'; this.showAuthModal = true; location.hash = '#/'; return; }
-          this.currentView = 'checkout';
-          this.checkoutStep = 1;
-          try {
-            var p = await _sb.from('profiles').select('full_name, phone').eq('id', this.user.id).single();
-            if (p.data && p.data.full_name) this.shippingForm.full_name = p.data.full_name;
-            if (p.data && p.data.phone)     this.shippingForm.phone     = p.data.phone;
-          } catch(e) {}
-        } else if (path === '/perfil') {
-          if (!this.user) { this.navigate('/'); return; }
-          this.currentView = 'profile';
-          await this.loadOrders();
-        } else if (path.startsWith('/pedido-confirmado/')) {
-          this.lastOrderId = path.split('/pedido-confirmado/')[1];
-          this.currentView = 'order-success';
-          setTimeout(initReveal, 100);
-        } else {
-          this.currentView = 'home';
-          this.loadFeaturedProducts();
-        }
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        setTimeout(initReveal, 300);
-      },
-
-      navigate: function(path) { location.hash = '#' + path; },
-
-      // ── Auth methods
-      async login() {
-        if (!this.loginEmail || !this.loginPassword) { this.authError = 'Por favor, completa todos los campos.'; return; }
-        this.authLoading = true; this.authError = '';
-        var r = await _sb.auth.signInWithPassword({ email: this.loginEmail.trim(), password: this.loginPassword });
-        this.authLoading = false;
-        if (r.error) { this.authError = 'Email o contraseña incorrectos.'; }
-        else { this.showAuthModal = false; this.loginEmail = ''; this.loginPassword = ''; this.toast('¡Bienvenido de vuelta!', 'success'); }
-      },
-      async register() {
-        if (!this.registerName || !this.registerEmail || !this.registerPassword) { this.authError = 'Por favor, completa todos los campos.'; return; }
-        if (this.registerPassword.length < 8) { this.authError = 'La contraseña debe tener al menos 8 caracteres.'; return; }
-        this.authLoading = true; this.authError = '';
-        var r = await _sb.auth.signUp({ email: this.registerEmail.trim(), password: this.registerPassword, options: { data: { full_name: this.registerName.trim() } } });
-        this.authLoading = false;
-        if (r.error) { this.authError = r.error.message && r.error.message.includes('already') ? 'Este email ya está registrado.' : 'Error al registrarse.'; }
-        else { this.showAuthModal = false; this.registerName=''; this.registerEmail=''; this.registerPassword=''; this.toast('¡Registro exitoso! Revisa tu email.', 'success'); }
-      },
-      async loginWithGoogle() {
-        await _sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/#/' } });
-      },
-      async logout() { await _sb.auth.signOut(); this.navigate('/'); this.toast('Sesión cerrada.', 'info'); },
-      openLogin()    { this.authView = 'login';    this.authError = ''; this.showAuthModal = true; },
-      openRegister() { this.authView = 'register'; this.authError = ''; this.showAuthModal = true; },
-
-      // ── Categories
-      async loadCategories() {
-        try { var r = await fetch('/api/categories'); var d = await r.json(); this.categories = d.categories || []; } catch(e) { this.categories = []; }
-      },
-
-      // ── Products
-      async loadFeaturedProducts() {
-        if (this.featuredProducts.length) return;
-        try { var r = await fetch('/api/products?featured=true&limit=8'); var d = await r.json(); this.featuredProducts = d.products || []; } catch(e) {}
-      },
-      async loadProducts(page) {
-        page = page || 1;
-        this.productsLoading = true; this.productsPage = page;
-        try {
-          var p = new URLSearchParams({ page: String(page), limit: '20', sort: this.filters.sort });
-          if (this.filters.category) p.set('category', this.filters.category);
-          if (this.filters.search)   p.set('search', this.filters.search);
-          var r = await fetch('/api/products?' + p.toString());
-          var d = await r.json();
-          this.products = d.products || []; this.productsTotal = d.total || 0; this.productsTotalPages = d.totalPages || 1;
-        } catch(e) { this.toast('Error cargando productos.', 'error'); }
-        finally { this.productsLoading = false; }
-      },
-      async loadProduct(slug) {
-        this.currentProduct = null; this.currentProductLoading = true;
-        try {
-          var r = await fetch('/api/product?slug=' + encodeURIComponent(slug));
-          if (!r.ok) throw new Error('not found');
-          this.currentProduct = await r.json();
-        } catch(e) { this.toast('Producto no encontrado.', 'error'); this.navigate('/catalogo'); }
-        finally { this.currentProductLoading = false; }
-      },
-      setFilter: function(key, val) { this.filters[key] = val; this.loadProducts(1); },
-      clearFilters: function() { this.filters = { category:'', search:'', sort:'newest' }; this.searchQuery=''; this.loadProducts(1); },
-      searchProducts: function() { this.filters.search = this.searchQuery; if (this.currentView !== 'catalog') this.navigate('/catalogo'); else this.loadProducts(1); },
-
-      // ── Cart
-      addToCart: function(product, qty) {
-        qty = Math.max(1, parseInt(qty) || 1);
-        var ex = this.cartItems.find(function(i){ return i.product_id === product.id; });
-        if (ex) { ex.quantity += qty; } else {
-          this.cartItems.push({ product_id: product.id, name: product.name, slug: product.slug, price: product.price, image_url: (product.images && product.images[0]) || null, quantity: qty });
-        }
-        this._saveCart(); this.toast(product.name + ' añadido al carrito 🛒', 'success'); this.cartOpen = true;
-      },
-      removeFromCart: function(pid) { this.cartItems = this.cartItems.filter(function(i){ return i.product_id !== pid; }); this._saveCart(); },
-      incrementQty: function(pid) { var it = this.cartItems.find(function(i){ return i.product_id === pid; }); if (it) { it.quantity++; this._saveCart(); } },
-      decrementQty: function(pid) { var it = this.cartItems.find(function(i){ return i.product_id === pid; }); if (!it) return; if (it.quantity <= 1) this.removeFromCart(pid); else { it.quantity--; this._saveCart(); } },
-      _saveCart: function() { try { localStorage.setItem(CART_KEY, JSON.stringify(this.cartItems)); } catch(e) {} },
-      _loadCart: function() { try { var r = localStorage.getItem(CART_KEY); if (r) this.cartItems = JSON.parse(r); } catch(e) {} },
-      clearCart:  function() { this.cartItems = []; localStorage.removeItem(CART_KEY); },
-      goToCheckout: function() { this.cartOpen = false; if (!this.user) { this.afterAuthRedirect = '/checkout'; this.openLogin(); return; } this.navigate('/checkout'); },
-
-      // ── Checkout
-      validateShipping: function() {
-        var f = this.shippingForm;
-        if (!f.full_name || !f.address_line1 || !f.city || !f.postal_code || !f.phone) { this.toast('Completa todos los campos obligatorios.', 'error'); return false; }
-        if (!/^\d{5}$/.test(f.postal_code)) { this.toast('Código postal debe tener 5 dígitos.', 'error'); return false; }
-        return true;
-      },
-      goToConfirm: function() { if (this.validateShipping()) this.checkoutStep = 2; },
-      async submitOrder() {
-        if (!this.user) { this.openLogin(); return; }
-        if (!this.cartItems.length) { this.toast('El carrito está vacío.', 'error'); return; }
-        this.checkoutLoading = true;
-        try {
-          var s = await _sb.auth.getSession();
-          var token = s.data.session ? s.data.session.access_token : '';
-          var r = await fetch('/api/orders', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body: JSON.stringify({ items: this.cartItems.map(function(i){ return { product_id:i.product_id, quantity:i.quantity }; }), shipping_address: this.shippingForm }) });
-          var d = await r.json();
-          if (!r.ok) throw new Error(d.error || 'Error al procesar el pedido.');
-          this.clearCart(); this.navigate('/pedido-confirmado/' + d.order_id);
-        } catch(e) { this.toast(e.message, 'error'); }
-        finally { this.checkoutLoading = false; }
-      },
-
-      // ── Profile
-      async loadOrders() {
-        this.ordersLoading = true;
-        try {
-          var s = await _sb.auth.getSession();
-          var token = s.data.session ? s.data.session.access_token : '';
-          var r = await fetch('/api/orders', { headers: { 'Authorization': 'Bearer ' + token } });
-          var d = await r.json(); this.userOrders = d.orders || [];
-        } catch(e) {} finally { this.ordersLoading = false; }
-      },
-
-      // ── Newsletter
-      async subscribeNewsletter() {
-        if (!this.newsletterEmail || !this.newsletterEmail.includes('@')) { this.toast('Introduce un email válido.', 'error'); return; }
-        this.newsletterLoading = true;
-        try {
-          var r = await fetch('/api/newsletter', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: this.newsletterEmail }) });
-          var d = await r.json();
-          if (d.already) { this.toast('Este email ya está suscrito 😊', 'info'); }
-          else { this.newsletterDone = true; this.newsletterEmail = ''; this.toast('¡Gracias! Te has suscrito.', 'success'); }
-        } catch(e) { this.toast('Error al suscribirse.', 'error'); }
-        finally { this.newsletterLoading = false; }
-      },
-
-      // ── Track view
-      _trackView: function(page) {
-        var sid = sessionStorage.getItem(SESSION_KEY);
-        if (!sid) { sid = (crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2); sessionStorage.setItem(SESSION_KEY, sid); }
-        fetch('/api/track-view', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ page: page, session_id: sid, user_id: this.user ? this.user.id : null }) }).catch(function(){});
-      },
-
-      // ── Toasts
-      toast: function(msg, type) {
-        type = type || 'info';
-        var id = Date.now() + Math.random();
-        var t  = { id: id, message: msg, type: type, visible: true };
-        this.toasts.push(t);
-        var self = this;
-        setTimeout(function() { t.visible = false; setTimeout(function() { self.toasts = self.toasts.filter(function(x){ return x.id !== id; }); }, 400); }, 3800);
-      },
-
-      // ── Format helpers
-      formatPrice:    function(n)       { return fmtPrice(n); },
-      formatDate:     function(iso)     { return fmtDate(iso); },
-      formatCategory: function(slug)    { return fmtCategory(slug); },
-      formatAge:      function(min,max) { return fmtAge(min, max); },
-      formatStatus:   function(s)       { return fmtStatus(s); },
-      discountPct:    function(price, compare) { if (!compare || compare <= price) return 0; return Math.round((1 - price/compare) * 100); },
-    };
-  });
-});
-</script>
 </body>
 </html>
