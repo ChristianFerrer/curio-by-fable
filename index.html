@@ -926,10 +926,480 @@
 
 </div><!-- /x-data -->
 
-<!-- Scripts al final: orden garantizado Supabase → Config → App → Alpine -->
+<!-- ═══════════════════════════════════════════════════════
+     SCRIPTS: Supabase CDN → Config → App (inline) → Alpine
+     El orden garantizado es crítico. App se inlinea aquí
+     para evitar cualquier problema de timing con fetch externo.
+═══════════════════════════════════════════════════════ -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="/public/config.js"></script>
-<script src="/src/js/app.js"></script>
+<script>
+// ── app.js inlineado — garantiza que window.supabase y window.__CURIO_CONFIG__ existen ──
+
+// Utilidades de formato
+var _fmt = {
+  price: function(n) {
+    if (n == null || isNaN(n)) return '—';
+    return Number(n).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
+  },
+  date: function(iso) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
+  },
+  category: function(slug) {
+    var map = {
+      juguetes_educativos:   'Juguetes Educativos',
+      juegos_mesa:           'Juegos de Mesa',
+      decoracion_habitacion: 'Decoración Habitación',
+      mobiliario_montessori: 'Mobiliario Montessori',
+      puzzles:               'Puzzles',
+      construccion:          'Construcción',
+      exterior:              'Exterior',
+    };
+    return map[slug] || slug || '';
+  },
+  age: function(min, max) {
+    if (min == null) return '';
+    if (max >= 99) return '+' + min + ' años';
+    if (min === max) return min + ' años';
+    return min + '–' + max + ' años';
+  },
+  statusLabel: function(s) {
+    var map = { pendiente: 'Pendiente', procesando: 'Procesando', enviado: 'Enviado', entregado: 'Entregado', cancelado: 'Cancelado' };
+    return map[s] || s;
+  },
+};
+
+var CART_KEY    = 'curio_cart';
+var SESSION_KEY = 'curio_sid';
+
+function _initReveal() {
+  if (!('IntersectionObserver' in window)) return;
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(e) {
+      if (e.isIntersecting) { e.target.classList.add('revealed'); observer.unobserve(e.target); }
+    });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('.reveal').forEach(function(el) { observer.observe(el); });
+}
+
+// Función global — Alpine la llama como x-data="app()"
+// El cliente Supabase se crea AQUÍ dentro, cuando Alpine ya llamó a la función,
+// garantizando que window.supabase existe (ya cargado sincrónicamente arriba).
+window.app = function() {
+  // Crear cliente Supabase de forma segura
+  var _cfg = window.__CURIO_CONFIG__ || {};
+  var _sb;
+  try {
+    _sb = window.supabase.createClient(
+      _cfg.supabaseUrl  || '',
+      _cfg.supabaseAnon || '',
+      { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }
+    );
+  } catch(e) {
+    console.warn('[Curio] Supabase no disponible:', e.message);
+    // Mock mínimo para que la UI funcione sin crash
+    _sb = {
+      auth: {
+        getSession:           async function() { return { data: { session: null } }; },
+        onAuthStateChange:    function() {},
+        signInWithPassword:   async function() { return { error: { message: 'Servicio no disponible' } }; },
+        signUp:               async function() { return { error: { message: 'Servicio no disponible' } }; },
+        signOut:              async function() {},
+        signInWithOAuth:      async function() {},
+        getUser:              async function() { return { data: { user: null } }; },
+      },
+      from: function() {
+        var _chain = { select: function() { return _chain; }, eq: function() { return _chain; }, single: async function() { return { data: null, error: null }; } };
+        return _chain;
+      },
+    };
+  }
+
+  return {
+    // ── Auth ─────────────────────────────────────────────────
+    user: null,
+    showAuthModal: false,
+    authView: 'login',
+    authLoading: false,
+    authError: '',
+    loginEmail: '', loginPassword: '',
+    registerName: '', registerEmail: '', registerPassword: '',
+    afterAuthRedirect: null,
+
+    // ── Navigation ────────────────────────────────────────────
+    currentView: 'home',
+    navScrolled: false,
+    megaMenuOpen: false,
+    mobileMenuOpen: false,
+
+    // ── Categories ────────────────────────────────────────────
+    categories: [],
+
+    // ── Products / Catalog ────────────────────────────────────
+    featuredProducts: [],
+    products: [],
+    productsLoading: false,
+    productsTotal: 0,
+    productsPage: 1,
+    productsTotalPages: 1,
+    filters: { category: '', search: '', sort: 'newest' },
+    searchQuery: '',
+
+    // ── Product detail ────────────────────────────────────────
+    currentProduct: null,
+    currentProductLoading: false,
+    selectedQty: 1,
+    selectedImageIdx: 0,
+
+    // ── Cart ─────────────────────────────────────────────────
+    cartItems: [],
+    cartOpen: false,
+
+    get cartCount()    { return this.cartItems.reduce(function(s,i){ return s+i.quantity; }, 0); },
+    get cartSubtotal() { return this.cartItems.reduce(function(s,i){ return s+i.price*i.quantity; }, 0); },
+    get cartShipping() { return this.cartSubtotal >= 50 ? 0 : 4.99; },
+    get cartTotal()    { return this.cartSubtotal + this.cartShipping; },
+
+    // ── Checkout ─────────────────────────────────────────────
+    checkoutStep: 1,
+    checkoutLoading: false,
+    lastOrderId: null,
+    shippingForm: { full_name:'', address_line1:'', address_line2:'', city:'', province:'', postal_code:'', phone:'' },
+
+    // ── Orders / Profile ──────────────────────────────────────
+    userOrders: [],
+    ordersLoading: false,
+
+    // ── Newsletter ────────────────────────────────────────────
+    newsletterEmail: '',
+    newsletterLoading: false,
+    newsletterDone: false,
+
+    // ── Toasts ────────────────────────────────────────────────
+    toasts: [],
+
+    // ════════════════════════════════════════════════════════
+    // INIT
+    // ════════════════════════════════════════════════════════
+    async init() {
+      try {
+        var sessionData = await _sb.auth.getSession();
+        this.user = sessionData.data.session?.user || null;
+      } catch(e) { this.user = null; }
+
+      var self = this;
+      _sb.auth.onAuthStateChange(function(_event, session) {
+        self.user = session?.user || null;
+        if (self.afterAuthRedirect && self.user) {
+          var dest = self.afterAuthRedirect;
+          self.afterAuthRedirect = null;
+          self.showAuthModal = false;
+          self.navigate(dest);
+        }
+      });
+
+      this._loadCart();
+
+      window.addEventListener('scroll', function() {
+        self.navScrolled = window.scrollY > 20;
+      }, { passive: true });
+
+      this._handleRoute(location.hash);
+      window.addEventListener('hashchange', function() { self._handleRoute(location.hash); });
+
+      await this.loadCategories();
+      setTimeout(_initReveal, 300);
+    },
+
+    // ── Router ───────────────────────────────────────────────
+    async _handleRoute(hash) {
+      var path = hash.replace('#', '') || '/';
+      this._trackView(path);
+      this.cartOpen = false;
+      this.mobileMenuOpen = false;
+
+      if (path === '/' || path === '') {
+        this.currentView = 'home';
+        this.loadFeaturedProducts();
+      } else if (path === '/catalogo' || path.startsWith('/catalogo?')) {
+        this.currentView = 'catalog';
+        var params = new URLSearchParams(path.split('?')[1] || '');
+        if (params.get('category')) this.filters.category = params.get('category');
+        await this.loadProducts();
+      } else if (path.startsWith('/producto/')) {
+        var slug = path.split('/producto/')[1].split('?')[0];
+        this.currentView = 'product';
+        this.selectedQty = 1;
+        this.selectedImageIdx = 0;
+        await this.loadProduct(slug);
+      } else if (path === '/carrito') {
+        this.currentView = 'cart';
+      } else if (path === '/checkout') {
+        if (!this.user) { this.afterAuthRedirect = '/checkout'; this.showAuthModal = true; location.hash = '#/'; return; }
+        this.currentView = 'checkout';
+        this.checkoutStep = 1;
+        try {
+          var profileData = await _sb.from('profiles').select('full_name, phone').eq('id', this.user.id).single();
+          if (profileData.data?.full_name) this.shippingForm.full_name = profileData.data.full_name;
+          if (profileData.data?.phone)     this.shippingForm.phone     = profileData.data.phone;
+        } catch(e) {}
+      } else if (path === '/perfil') {
+        if (!this.user) { this.navigate('/'); return; }
+        this.currentView = 'profile';
+        await this.loadOrders();
+      } else if (path.startsWith('/pedido-confirmado/')) {
+        this.lastOrderId = path.split('/pedido-confirmado/')[1];
+        this.currentView = 'order-success';
+        setTimeout(_initReveal, 100);
+      } else {
+        this.currentView = 'home';
+        this.loadFeaturedProducts();
+      }
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(_initReveal, 300);
+    },
+
+    navigate: function(path) { location.hash = '#' + path; },
+
+    // ════════════════════════════════════════════════════════
+    // AUTH
+    // ════════════════════════════════════════════════════════
+    async login() {
+      if (!this.loginEmail || !this.loginPassword) { this.authError = 'Por favor, completa todos los campos.'; return; }
+      this.authLoading = true; this.authError = '';
+      var r = await _sb.auth.signInWithPassword({ email: this.loginEmail.trim(), password: this.loginPassword });
+      this.authLoading = false;
+      if (r.error) { this.authError = 'Email o contraseña incorrectos.'; }
+      else { this.showAuthModal = false; this.loginEmail = ''; this.loginPassword = ''; this.toast('¡Bienvenido de vuelta!', 'success'); }
+    },
+
+    async register() {
+      if (!this.registerName || !this.registerEmail || !this.registerPassword) { this.authError = 'Por favor, completa todos los campos.'; return; }
+      if (this.registerPassword.length < 8) { this.authError = 'La contraseña debe tener al menos 8 caracteres.'; return; }
+      this.authLoading = true; this.authError = '';
+      var r = await _sb.auth.signUp({ email: this.registerEmail.trim(), password: this.registerPassword, options: { data: { full_name: this.registerName.trim() } } });
+      this.authLoading = false;
+      if (r.error) { this.authError = r.error.message.includes('already') ? 'Este email ya está registrado.' : 'Error al registrarse.'; }
+      else { this.showAuthModal = false; this.registerName=''; this.registerEmail=''; this.registerPassword=''; this.toast('¡Registro exitoso! Revisa tu email para verificar tu cuenta.', 'success'); }
+    },
+
+    async loginWithGoogle() {
+      await _sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/#/' } });
+    },
+
+    async logout() {
+      await _sb.auth.signOut();
+      this.navigate('/');
+      this.toast('Sesión cerrada correctamente.', 'info');
+    },
+
+    openLogin()    { this.authView = 'login';    this.authError = ''; this.showAuthModal = true; },
+    openRegister() { this.authView = 'register'; this.authError = ''; this.showAuthModal = true; },
+
+    // ════════════════════════════════════════════════════════
+    // CATEGORIES
+    // ════════════════════════════════════════════════════════
+    async loadCategories() {
+      try {
+        var res = await fetch('/api/categories');
+        var data = await res.json();
+        this.categories = data.categories || [];
+      } catch(e) { this.categories = []; }
+    },
+
+    // ════════════════════════════════════════════════════════
+    // PRODUCTS
+    // ════════════════════════════════════════════════════════
+    async loadFeaturedProducts() {
+      if (this.featuredProducts.length) return;
+      try {
+        var res = await fetch('/api/products?featured=true&limit=8');
+        var data = await res.json();
+        this.featuredProducts = data.products || [];
+      } catch(e) {}
+    },
+
+    async loadProducts(page) {
+      page = page || 1;
+      this.productsLoading = true;
+      this.productsPage = page;
+      try {
+        var params = new URLSearchParams({ page: String(page), limit: '20', sort: this.filters.sort });
+        if (this.filters.category) params.set('category', this.filters.category);
+        if (this.filters.search)   params.set('search',   this.filters.search);
+        var res = await fetch('/api/products?' + params.toString());
+        var data = await res.json();
+        this.products           = data.products   || [];
+        this.productsTotal      = data.total      || 0;
+        this.productsTotalPages = data.totalPages || 1;
+      } catch(e) {
+        this.toast('Error cargando productos.', 'error');
+      } finally {
+        this.productsLoading = false;
+      }
+    },
+
+    async loadProduct(slug) {
+      this.currentProduct = null;
+      this.currentProductLoading = true;
+      try {
+        var res = await fetch('/api/product?slug=' + encodeURIComponent(slug));
+        if (!res.ok) throw new Error('not found');
+        this.currentProduct = await res.json();
+      } catch(e) {
+        this.toast('Producto no encontrado.', 'error');
+        this.navigate('/catalogo');
+      } finally {
+        this.currentProductLoading = false;
+      }
+    },
+
+    setFilter: function(key, value) { this.filters[key] = value; this.loadProducts(1); },
+    clearFilters: function() { this.filters = { category:'', search:'', sort:'newest' }; this.searchQuery=''; this.loadProducts(1); },
+    searchProducts: function() {
+      this.filters.search = this.searchQuery;
+      if (this.currentView !== 'catalog') this.navigate('/catalogo');
+      else this.loadProducts(1);
+    },
+
+    // ════════════════════════════════════════════════════════
+    // CART
+    // ════════════════════════════════════════════════════════
+    addToCart: function(product, qty) {
+      qty = qty || 1;
+      var quantity = Math.max(1, parseInt(qty) || 1);
+      var existing = this.cartItems.find(function(i){ return i.product_id === product.id; });
+      if (existing) { existing.quantity += quantity; }
+      else { this.cartItems.push({ product_id: product.id, name: product.name, slug: product.slug, price: product.price, image_url: product.images?.[0] || null, quantity: quantity }); }
+      this._saveCart();
+      this.toast(product.name + ' añadido al carrito 🛒', 'success');
+      this.cartOpen = true;
+    },
+
+    removeFromCart: function(productId) { this.cartItems = this.cartItems.filter(function(i){ return i.product_id !== productId; }); this._saveCart(); },
+
+    incrementQty: function(productId) { var item = this.cartItems.find(function(i){ return i.product_id === productId; }); if (item) { item.quantity++; this._saveCart(); } },
+    decrementQty: function(productId) {
+      var item = this.cartItems.find(function(i){ return i.product_id === productId; });
+      if (!item) return;
+      if (item.quantity <= 1) this.removeFromCart(productId);
+      else { item.quantity--; this._saveCart(); }
+    },
+
+    _saveCart: function() { try { localStorage.setItem(CART_KEY, JSON.stringify(this.cartItems)); } catch(e) {} },
+    _loadCart: function() { try { var raw = localStorage.getItem(CART_KEY); if (raw) this.cartItems = JSON.parse(raw); } catch(e) {} },
+    clearCart:  function() { this.cartItems = []; localStorage.removeItem(CART_KEY); },
+
+    goToCheckout: function() {
+      this.cartOpen = false;
+      if (!this.user) { this.afterAuthRedirect = '/checkout'; this.openLogin(); return; }
+      this.navigate('/checkout');
+    },
+
+    // ════════════════════════════════════════════════════════
+    // CHECKOUT
+    // ════════════════════════════════════════════════════════
+    validateShipping: function() {
+      var f = this.shippingForm;
+      if (!f.full_name || !f.address_line1 || !f.city || !f.postal_code || !f.phone) {
+        this.toast('Por favor, completa todos los campos obligatorios.', 'error'); return false;
+      }
+      if (!/^\d{5}$/.test(f.postal_code)) { this.toast('El código postal debe tener 5 dígitos.', 'error'); return false; }
+      return true;
+    },
+
+    goToConfirm: function() { if (this.validateShipping()) this.checkoutStep = 2; },
+
+    async submitOrder() {
+      if (!this.user) { this.openLogin(); return; }
+      if (!this.cartItems.length) { this.toast('El carrito está vacío.', 'error'); return; }
+      this.checkoutLoading = true;
+      try {
+        var sessionData = await _sb.auth.getSession();
+        var token = sessionData.data.session?.access_token;
+        var res = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ items: this.cartItems.map(function(i){ return { product_id: i.product_id, quantity: i.quantity }; }), shipping_address: this.shippingForm }),
+        });
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error al procesar el pedido.');
+        this.clearCart();
+        this.navigate('/pedido-confirmado/' + data.order_id);
+      } catch(e) {
+        this.toast(e.message, 'error');
+      } finally {
+        this.checkoutLoading = false;
+      }
+    },
+
+    // ════════════════════════════════════════════════════════
+    // PROFILE / ORDERS
+    // ════════════════════════════════════════════════════════
+    async loadOrders() {
+      this.ordersLoading = true;
+      try {
+        var sessionData = await _sb.auth.getSession();
+        var res = await fetch('/api/orders', { headers: { 'Authorization': 'Bearer ' + sessionData.data.session?.access_token } });
+        var data = await res.json();
+        this.userOrders = data.orders || [];
+      } catch(e) {} finally { this.ordersLoading = false; }
+    },
+
+    // ════════════════════════════════════════════════════════
+    // NEWSLETTER
+    // ════════════════════════════════════════════════════════
+    async subscribeNewsletter() {
+      if (!this.newsletterEmail || !this.newsletterEmail.includes('@')) { this.toast('Por favor, introduce un email válido.', 'error'); return; }
+      this.newsletterLoading = true;
+      try {
+        var res = await fetch('/api/newsletter', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: this.newsletterEmail }) });
+        var data = await res.json();
+        if (data.already) { this.toast('Este email ya está suscrito 😊', 'info'); }
+        else { this.newsletterDone = true; this.newsletterEmail = ''; this.toast('¡Gracias! Te has suscrito correctamente.', 'success'); }
+      } catch(e) { this.toast('Error al suscribirse. Inténtalo de nuevo.', 'error'); }
+      finally { this.newsletterLoading = false; }
+    },
+
+    // ════════════════════════════════════════════════════════
+    // PAGE VIEW TRACKING
+    // ════════════════════════════════════════════════════════
+    _trackView: function(page) {
+      var sid = sessionStorage.getItem(SESSION_KEY);
+      if (!sid) { sid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2); sessionStorage.setItem(SESSION_KEY, sid); }
+      var userId = this.user?.id || null;
+      fetch('/api/track-view', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ page: page, session_id: sid, user_id: userId }) }).catch(function(){});
+    },
+
+    // ════════════════════════════════════════════════════════
+    // TOASTS
+    // ════════════════════════════════════════════════════════
+    toast: function(message, type) {
+      type = type || 'info';
+      var id = Date.now() + Math.random();
+      var t = { id: id, message: message, type: type, visible: true };
+      this.toasts.push(t);
+      var self = this;
+      setTimeout(function() {
+        t.visible = false;
+        setTimeout(function() { self.toasts = self.toasts.filter(function(x){ return x.id !== id; }); }, 400);
+      }, 3800);
+    },
+
+    // ════════════════════════════════════════════════════════
+    // FORMAT HELPERS
+    // ════════════════════════════════════════════════════════
+    formatPrice:    function(n)        { return _fmt.price(n); },
+    formatDate:     function(iso)      { return _fmt.date(iso); },
+    formatCategory: function(slug)     { return _fmt.category(slug); },
+    formatAge:      function(min, max) { return _fmt.age(min, max); },
+    formatStatus:   function(s)        { return _fmt.statusLabel(s); },
+    discountPct:    function(price, compare) { if (!compare || compare <= price) return 0; return Math.round((1 - price / compare) * 100); },
+  };
+};
+</script>
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </body>
 </html>
