@@ -1082,7 +1082,12 @@
               💡 <strong>Segmentación:</strong> VIP (≥5 pedidos o ≥200€) · Recurrente (≥2 pedidos, activo 90 días) · Nuevo (1 pedido, último mes) · Inactivo (compró pero sin actividad reciente) · Visitante (sin compras)
             </div>
 
-            <div x-show="crmLoading" class="spinner" style="margin:var(--sp-xl)"></div>
+            <div x-show="crmLoading" class="crm-progress-bar-wrap">
+              <div class="crm-progress-bar-track">
+                <div class="crm-progress-bar-fill"></div>
+              </div>
+              <span class="crm-progress-label">Cargando clientes...</span>
+            </div>
             <div x-show="!crmLoading && !crmCustomers.length" style="padding:var(--sp-xl);text-align:center;color:var(--text-3)">Sin clientes en este segmento</div>
 
             <div style="overflow-x:auto" x-show="!crmLoading && crmCustomers.length">
@@ -1143,8 +1148,11 @@
   <!-- Panel -->
   <div class="admin-form-panel crm-detail-panel" x-show="crmDetail !== null || crmDetailLoading" style="display:none">
     <!-- Loading state -->
-    <div x-show="crmDetailLoading && !crmDetail" style="padding:var(--sp-xl);text-align:center">
-      <div class="spinner"></div>
+    <div x-show="crmDetailLoading && !crmDetail" class="crm-detail-loading">
+      <div class="crm-progress-bar-track crm-progress-bar-track--lg">
+        <div class="crm-progress-bar-fill"></div>
+      </div>
+      <span class="crm-progress-label">Cargando perfil del cliente...</span>
     </div>
 
     <template x-if="crmDetail">
