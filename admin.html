@@ -699,7 +699,10 @@
              DASHBOARD VIEW
         ════════════════════════════════════════════════ -->
         <div x-show="view==='dashboard'">
-          <div x-show="kpisLoading" class="spinner"></div>
+          <div x-show="kpisLoading" class="crm-progress-bar-wrap">
+            <div class="crm-progress-bar-track"><div class="crm-progress-bar-fill"></div></div>
+            <span class="crm-progress-label">Cargando métricas...</span>
+          </div>
           <div x-show="!kpisLoading && kpis">
 
             <!-- KPI Cards -->
@@ -844,7 +847,10 @@
               </div>
             </div>
 
-            <div x-show="productsLoading" class="spinner" style="margin:var(--sp-xl)"></div>
+            <div x-show="productsLoading" class="crm-progress-bar-wrap">
+              <div class="crm-progress-bar-track"><div class="crm-progress-bar-fill"></div></div>
+              <span class="crm-progress-label">Cargando productos...</span>
+            </div>
             <div x-show="!productsLoading && !filteredProducts.length" style="padding:var(--sp-xl);text-align:center;color:var(--text-3)">
               <span x-show="!adminProducts.length">No hay productos. ¡Crea el primero!</span>
               <span x-show="adminProducts.length && !filteredProducts.length">Sin resultados para "<span x-text="productSearch"></span>"</span>
@@ -925,7 +931,10 @@
               </div>
             </div>
 
-            <div x-show="ordersLoading" class="spinner" style="margin:var(--sp-xl)"></div>
+            <div x-show="ordersLoading" class="crm-progress-bar-wrap">
+              <div class="crm-progress-bar-track"><div class="crm-progress-bar-fill"></div></div>
+              <span class="crm-progress-label">Cargando pedidos...</span>
+            </div>
             <div x-show="!ordersLoading && !filteredOrders.length" style="padding:var(--sp-xl);text-align:center;color:var(--text-3)">Sin pedidos</div>
 
             <div style="overflow-x:auto" x-show="filteredOrders.length">
@@ -994,7 +1003,10 @@
               </div>
             </div>
 
-            <div x-show="usersLoading" class="spinner" style="margin:var(--sp-xl)"></div>
+            <div x-show="usersLoading" class="crm-progress-bar-wrap">
+              <div class="crm-progress-bar-track"><div class="crm-progress-bar-fill"></div></div>
+              <span class="crm-progress-label">Cargando usuarios...</span>
+            </div>
             <div x-show="!usersLoading && !filteredUsers.length" style="padding:var(--sp-xl);text-align:center;color:var(--text-3)">Sin usuarios</div>
 
             <div style="overflow-x:auto" x-show="filteredUsers.length">

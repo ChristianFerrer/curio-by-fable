@@ -3,19 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Curio by Fable — Juguetes de madera para niños</title>
-  <meta name="description" content="Juguetes educativos de madera para niños. Montessori, puzzles, construcción y decoración. Fabricados con madera certificada FSC.">
-  <meta name="theme-color" content="#006CB7">
+  <title>Curio by Fable — Objetos de madera para espacios únicos</title>
+  <meta name="description" content="Curio by Fable. Productos de innovación hechos con madera. Diseño premium, artesanía contemporánea y materiales de origen certificado.">
+  <meta name="theme-color" content="#d1ccc0">
+
+  <!-- Prefetch APIs para carga inmediata -->
+  <link rel="prefetch" href="/api/products?featured=true&limit=8" as="fetch" crossorigin>
+  <link rel="prefetch" href="/api/categories" as="fetch" crossorigin>
 
   <!-- Open Graph -->
-  <meta property="og:title" content="Curio by Fable — Juguetes de madera">
-  <meta property="og:description" content="Juguetes educativos de madera de alta calidad para niños. Montessori, puzzles, construcción y más.">
+  <meta property="og:title" content="Curio by Fable — Madera e innovación">
+  <meta property="og:description" content="Objetos de madera de diseño premium. Innovación, artesanía y materiales sostenibles en cada pieza.">
   <meta property="og:type" content="website">
 
-  <!-- Google Fonts -->
+  <!-- Google Fonts: Inter para UI limpia estilo Apple -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
   <!-- CSS -->
   <link rel="stylesheet" href="/src/css/main.css">
@@ -710,7 +714,7 @@
       <!-- Logo -->
       <a href="#/" class="nav-logo">
         <span class="logo-curio">Curio</span>
-        <span class="logo-by">by</span>
+        <span class="logo-separator"></span>
         <span class="logo-fable">Fable</span>
       </a>
 
@@ -718,9 +722,7 @@
       <div class="nav-links">
         <div class="mega-menu-trigger" @mouseenter="megaMenuOpen=true" @mouseleave="megaMenuOpen=false">
           <button class="nav-link">Tienda ▾</button>
-          <div class="mega-menu" x-show="megaMenuOpen"
-               
-               @click.outside="megaMenuOpen=false">
+          <div class="mega-menu" x-show="megaMenuOpen" @click.outside="megaMenuOpen=false">
             <a href="#/catalogo" class="mega-menu-item">🛍️ Todos los productos</a>
             <template x-for="cat in categories" :key="cat.id">
               <a :href="'#/catalogo?category=' + cat.slug" class="mega-menu-item">
@@ -752,16 +754,12 @@
         </button>
 
         <!-- Auth -->
-        <template x-if="!user">
-          <button class="btn btn-primary btn-sm" @click="openLogin()">Entrar</button>
-        </template>
-        <template x-if="user">
-          <div class="flex items-center gap-sm">
-            <button class="nav-icon-btn" @click="navigate('/perfil')" title="Mi cuenta">
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-            </button>
-          </div>
-        </template>
+        <button class="btn btn-primary btn-sm" x-show="!user" @click="openLogin()">Entrar</button>
+        <div class="flex items-center gap-sm" x-show="user">
+          <button class="nav-icon-btn" @click="navigate('/perfil')" title="Mi cuenta">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+          </button>
+        </div>
       </div>
     </div>
   </nav>
@@ -797,39 +795,50 @@
     <section class="hero">
       <div class="hero-inner">
         <div>
-          <div class="hero-eyebrow">🌿 Madera certificada FSC · Hecho con amor</div>
+          <div class="hero-eyebrow">Madera certificada · Diseño contemporáneo</div>
           <h1 class="hero-title">
-            Juguetes de <span class="accent-blue">madera</span> que
-            <span class="accent-red">inspiran</span> a los niños
+            Innovación <span class="accent-wood">tallada</span><br>en madera
           </h1>
           <p class="hero-desc">
-            Diseñados para estimular la creatividad, el aprendizaje y el juego libre.
-            Cada pieza, artesanal y pensada para crecer con tu hijo.
+            Piezas únicas donde la tecnología de diseño y la artesanía
+            en madera natural se encuentran. Para espacios que inspiran.
           </p>
           <div class="hero-actions">
-            <a href="#/catalogo" class="btn btn-primary btn-lg">🛍️ Ver catálogo</a>
-            <a href="#/catalogo?category=juguetes-educativos" class="btn btn-outline btn-lg">Montessori</a>
+            <a href="#/catalogo" class="btn btn-primary btn-lg">Explorar colección</a>
+            <a href="#/catalogo" class="btn btn-secondary btn-lg">Ver novedades</a>
           </div>
         </div>
-        <div class="hero-image">
-          <img src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80" alt="Juguetes de madera Curio by Fable" loading="eager">
+        <div class="hero-visual float">
+          <img src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80" alt="Curio by Fable — objetos de madera premium" loading="eager">
+          <div class="hero-visual-glow"></div>
         </div>
       </div>
       <div class="hero-trust">
-        <div class="trust-item"><span class="trust-icon">🌳</span> Madera FSC certificada</div>
-        <div class="trust-item"><span class="trust-icon">🛡️</span> Norma EN71 · CE</div>
-        <div class="trust-item"><span class="trust-icon">🚚</span> Envío gratis +50€</div>
-        <div class="trust-item"><span class="trust-icon">↩️</span> 30 días de devolución</div>
+        <div class="trust-item">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          Madera FSC certificada
+        </div>
+        <div class="trust-item">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          Acabados sin químicos
+        </div>
+        <div class="trust-item">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+          Envío gratis +50€
+        </div>
+        <div class="trust-item">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          30 días de devolución
+        </div>
       </div>
     </section>
 
     <!-- Categorías -->
     <section style="padding:var(--sp-4xl) 0" class="container">
-      <div class="section-header reveal">
-        <div>
-          <h2 class="section-title">Explora por <span>categoría</span></h2>
-          <p class="section-subtitle">Encuentra el regalo perfecto para cada edad y momento</p>
-        </div>
+      <div class="reveal" style="margin-bottom:var(--sp-8)">
+        <div class="section-eyebrow">Colecciones</div>
+        <h2 class="section-title">Explora por categoría</h2>
+        <p class="section-subtitle">Cada colección diseñada con propósito, materiales nobles y atención al detalle.</p>
       </div>
       <div class="categories-grid">
         <template x-for="cat in categories" :key="cat.id">
@@ -843,12 +852,13 @@
 
     <!-- Productos Destacados -->
     <section style="padding:var(--sp-xl) 0 var(--sp-4xl)" class="container">
-      <div class="section-header reveal">
+      <div class="reveal" style="margin-bottom:var(--sp-8);display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-6);flex-wrap:wrap">
         <div>
-          <h2 class="section-title">Productos <span>destacados</span></h2>
-          <p class="section-subtitle">Los más queridos por nuestras familias</p>
+          <div class="section-eyebrow">Selección</div>
+          <h2 class="section-title">Piezas destacadas</h2>
+          <p class="section-subtitle">Las piezas más valoradas de nuestra colección.</p>
         </div>
-        <a href="#/catalogo" class="btn btn-ghost btn-sm hide-mobile">Ver todos →</a>
+        <a href="#/catalogo" class="btn btn-ghost btn-sm hide-mobile">Ver colección completa →</a>
       </div>
 
       <!-- Skeleton mientras carga -->
@@ -897,51 +907,51 @@
     </section>
 
     <!-- Features strip -->
-    <section style="padding:var(--sp-2xl) 0;background:var(--surface-2)">
+    <section class="section-sm">
       <div class="container">
         <div class="features-strip">
           <div class="feature-item reveal">
-            <div class="feature-icon">🌿</div>
-            <h3 class="feature-title">100% Sostenible</h3>
-            <p class="feature-desc">Madera de bosques gestionados de forma responsable, certificada FSC.</p>
+            <span class="feature-icon">🌲</span>
+            <h3 class="feature-title">Madera FSC certificada</h3>
+            <p class="feature-desc">Materiales de bosques gestionados responsablemente. Cada pieza, un compromiso con el planeta.</p>
           </div>
           <div class="feature-item reveal reveal-delay-1">
-            <div class="feature-icon">🎨</div>
-            <h3 class="feature-title">Pinturas no tóxicas</h3>
-            <p class="feature-desc">Tintes al agua seguros para los más pequeños. Cumplen norma EN71.</p>
+            <span class="feature-icon">✦</span>
+            <h3 class="feature-title">Diseño contemporáneo</h3>
+            <p class="feature-desc">Estética minimalista y funcional. Piezas que encajan en espacios que valoran el buen diseño.</p>
           </div>
           <div class="feature-item reveal reveal-delay-2">
-            <div class="feature-icon">🧠</div>
-            <h3 class="feature-title">Aprendizaje activo</h3>
-            <p class="feature-desc">Cada juguete estimula habilidades cognitivas, motoras y creativas.</p>
+            <span class="feature-icon">⬡</span>
+            <h3 class="feature-title">Artesanía precisa</h3>
+            <p class="feature-desc">Fabricación con técnicas de alta precisión. Acabados a mano para detalles únicos en cada pieza.</p>
           </div>
           <div class="feature-item reveal reveal-delay-3">
-            <div class="feature-icon">♻️</div>
-            <h3 class="feature-title">Para toda la vida</h3>
-            <p class="feature-desc">Fabricados para durar generaciones. Madera resistente y acabados premium.</p>
+            <span class="feature-icon">∞</span>
+            <h3 class="feature-title">Para siempre</h3>
+            <p class="feature-desc">Construidos para durar décadas. La madera mejora con el tiempo. Una inversión que trasciende.</p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- Newsletter -->
-    <section style="padding:var(--sp-4xl) 0" class="container">
+    <section class="section container">
       <div class="newsletter-section reveal">
-        <h2 class="newsletter-title">🎁 Únete a la familia Curio</h2>
-        <p class="newsletter-desc">Recibe inspiración, novedades y ofertas exclusivas para los que aman jugar bien.</p>
+        <h2 class="newsletter-title">Acceso anticipado a nuevas piezas</h2>
+        <p class="newsletter-desc">Suscríbete y sé el primero en conocer nuevas colecciones, ediciones limitadas y talleres.</p>
         <div x-show="!newsletterDone">
           <div class="newsletter-form">
             <input type="email" class="newsletter-input" placeholder="tu@email.com"
                    x-model="newsletterEmail" @keydown.enter="subscribeNewsletter()">
-            <button class="btn btn-yellow" @click="subscribeNewsletter()" :disabled="newsletterLoading">
+            <button class="btn btn-primary" @click="subscribeNewsletter()" :disabled="newsletterLoading">
               <span x-show="!newsletterLoading">Suscribirme</span>
-              <span x-show="newsletterLoading">...</span>
+              <span class="spinner-sm" x-show="newsletterLoading"></span>
             </button>
           </div>
-          <p style="margin-top:12px;font-size:0.8rem;opacity:0.7">Sin spam, te lo prometemos. Puedes darte de baja cuando quieras.</p>
+          <p style="margin-top:var(--sp-4);font-size:var(--text-xs);color:var(--text-3)">Sin spam. Puedes cancelar cuando quieras.</p>
         </div>
-        <div x-show="newsletterDone" style="font-size:1.25rem;font-family:var(--font-head);font-weight:900">
-          ✅ ¡Gracias por unirte! Pronto tendrás noticias nuestras.
+        <div x-show="newsletterDone" style="font-size:var(--text-lg);font-weight:700;color:var(--success)">
+          ✓ ¡Gracias! Pronto tendrás noticias nuestras.
         </div>
       </div>
     </section>
@@ -1027,12 +1037,15 @@
         <!-- Empty state -->
         <div x-show="!productsLoading && !products.length" style="text-align:center;padding:var(--sp-4xl) 0;color:var(--text-3)">
           <div style="font-size:3rem;margin-bottom:var(--sp-md)">🔍</div>
-          <h3 style="font-family:var(--font-head);font-weight:800;margin-bottom:var(--sp-sm)">Sin resultados</h3>
+          <h3 style="font-family:var(--font-sans);font-weight:800;margin-bottom:var(--sp-sm)">Sin resultados</h3>
           <p>Prueba con otros filtros o <button class="btn btn-outline btn-sm" @click="clearFilters()">ver todos los productos</button></p>
         </div>
 
         <!-- Loading -->
-        <div x-show="productsLoading" class="spinner"></div>
+        <div x-show="productsLoading" class="crm-progress-bar-wrap">
+          <div class="crm-progress-bar-track"><div class="crm-progress-bar-fill"></div></div>
+          <span class="crm-progress-label">Cargando productos...</span>
+        </div>
 
         <!-- Paginación -->
         <div class="pagination" x-show="productsTotalPages > 1 && !productsLoading">
@@ -1058,7 +1071,10 @@
     </nav>
 
     <!-- Loading state -->
-    <div x-show="currentProductLoading" class="spinner"></div>
+    <div x-show="currentProductLoading" class="crm-progress-bar-wrap">
+      <div class="crm-progress-bar-track"><div class="crm-progress-bar-fill"></div></div>
+      <span class="crm-progress-label">Cargando producto...</span>
+    </div>
 
     <!-- Product detail -->
     <div class="product-detail" x-show="currentProduct && !currentProductLoading">
@@ -1084,8 +1100,7 @@
         <div class="product-info-price">
           <span class="price-main" x-text="formatPrice((currentProduct && currentProduct.price))"></span>
           <span class="price-compare" x-show="(currentProduct && currentProduct.compare_price)" x-text="formatPrice((currentProduct && currentProduct.compare_price))"></span>
-          <span class="price-save" x-show="(currentProduct && currentProduct.compare_price) > (currentProduct && currentProduct.price)"
-                x-text="'-' + discountPct((currentProduct && currentProduct.price), (currentProduct && currentProduct.compare_price)) + '%'"></span>
+          <span class="price-save" x-show="(currentProduct && currentProduct.compare_price) > (currentProduct && currentProduct.price)" x-text="'-' + discountPct((currentProduct && currentProduct.price), (currentProduct && currentProduct.compare_price)) + '%'"></span>
         </div>
 
         <p style="color:var(--text-2);line-height:1.7;margin-bottom:var(--sp-lg)" x-text="(currentProduct && currentProduct.description)"></p>
@@ -1177,7 +1192,7 @@
     <h1 class="section-title" style="margin-bottom:var(--sp-xl)">🛒 Tu carrito</h1>
     <div x-show="!cartItems.length" style="text-align:center;padding:var(--sp-4xl) 0;color:var(--text-3)">
       <div style="font-size:4rem;margin-bottom:var(--sp-md)">🛒</div>
-      <h3 style="font-family:var(--font-head);font-weight:800;margin-bottom:var(--sp-md)">Tu carrito está vacío</h3>
+      <h3 style="font-family:var(--font-sans);font-weight:800;margin-bottom:var(--sp-md)">Tu carrito está vacío</h3>
       <a href="#/catalogo" class="btn btn-primary">Explorar productos</a>
     </div>
     <div class="grid-2" style="gap:var(--sp-xl)" x-show="cartItems.length">
@@ -1301,15 +1316,15 @@
           </div>
 
           <div class="admin-card" style="margin-bottom:var(--sp-lg);padding:var(--sp-lg)">
-            <h4 style="font-family:var(--font-head);font-weight:800;margin-bottom:var(--sp-md)">📦 Dirección de entrega</h4>
+            <h4 style="font-family:var(--font-sans);font-weight:800;margin-bottom:var(--sp-md)">📦 Dirección de entrega</h4>
             <p style="color:var(--text-2)" x-text="shippingForm.full_name"></p>
             <p style="color:var(--text-2)" x-text="shippingForm.address_line1"></p>
             <p style="color:var(--text-2)" x-text="shippingForm.city + ', ' + shippingForm.postal_code"></p>
             <p style="color:var(--text-2)" x-text="shippingForm.phone"></p>
           </div>
 
-          <div style="background:var(--yellow-light);border:2px solid var(--yellow);border-radius:var(--r-md);padding:var(--sp-md);margin-bottom:var(--sp-lg);font-family:var(--font-head);font-size:0.9rem">
-            💳 <strong>Pago:</strong> Esta es una demo. No se procesará ningún cargo real.
+          <div style="background:rgba(196,135,42,.1);border:1px solid rgba(196,135,42,.3);border-radius:var(--r-md);padding:var(--sp-md);margin-bottom:var(--sp-lg);font-size:var(--text-sm);color:var(--text-2)">
+            💳 <strong style="color:var(--accent)">Pago:</strong> Esta es una demo. No se procesará ningún cargo real.
           </div>
 
           <button class="btn btn-primary btn-xl btn-full" @click="submitOrder()" :disabled="checkoutLoading">
@@ -1325,7 +1340,7 @@
         <template x-for="item in cartItems" :key="item.product_id">
           <div style="display:flex;justify-content:space-between;font-size:0.875rem;margin-bottom:var(--sp-sm)">
             <span x-text="item.name + ' ×' + item.quantity" style="color:var(--text-2);flex:1;padding-right:var(--sp-sm)"></span>
-            <span style="font-weight:700;font-family:var(--font-head)" x-text="formatPrice(item.price * item.quantity)"></span>
+            <span style="font-weight:700;font-family:var(--font-sans)" x-text="formatPrice(item.price * item.quantity)"></span>
           </div>
         </template>
         <div class="cart-summary-row" style="margin-top:var(--sp-md)"><span>Subtotal</span><span x-text="formatPrice(cartSubtotal)"></span></div>
@@ -1343,10 +1358,10 @@
        ORDER SUCCESS VIEW
   ═══════════════════════════════════════════════════════ -->
   <div x-show="currentView==='order-success'" class="container page-wrapper" style="text-align:center;padding-top:var(--sp-4xl)">
-    <div style="font-size:5rem;margin-bottom:var(--sp-lg)" class="pop">🎉</div>
-    <h1 style="font-family:var(--font-head);font-weight:900;font-size:2.5rem;margin-bottom:var(--sp-md)">¡Pedido confirmado!</h1>
+    <div style="font-size:4rem;margin-bottom:var(--sp-lg)" class="pop">✓</div>
+    <h1 style="font-weight:800;font-size:var(--text-3xl);letter-spacing:-0.04em;margin-bottom:var(--sp-md)">Pedido confirmado</h1>
     <p style="color:var(--text-2);font-size:1.1rem;margin-bottom:var(--sp-sm)">Gracias por tu compra. Recibirás un email de confirmación pronto.</p>
-    <p style="color:var(--text-3);font-size:0.9rem;margin-bottom:var(--sp-2xl)">Número de pedido: <strong style="font-family:var(--font-head)" x-text="lastOrderId"></strong></p>
+    <p style="color:var(--text-3);font-size:0.9rem;margin-bottom:var(--sp-2xl)">Número de pedido: <strong style="font-family:var(--font-sans)" x-text="lastOrderId"></strong></p>
     <div class="flex gap-md justify-center flex-wrap">
       <a href="#/perfil" class="btn btn-primary btn-lg">Ver mis pedidos</a>
       <a href="#/" class="btn btn-outline btn-lg">Volver al inicio</a>
@@ -1365,10 +1380,13 @@
       <button class="btn btn-ghost" @click="logout()">Cerrar sesión</button>
     </div>
 
-    <h2 style="font-family:var(--font-head);font-weight:800;font-size:1.25rem;margin-bottom:var(--sp-lg)">Mis pedidos</h2>
-    <div x-show="ordersLoading" class="spinner"></div>
+    <h2 style="font-family:var(--font-sans);font-weight:800;font-size:1.25rem;margin-bottom:var(--sp-lg)">Mis pedidos</h2>
+    <div x-show="ordersLoading" class="crm-progress-bar-wrap">
+      <div class="crm-progress-bar-track"><div class="crm-progress-bar-fill"></div></div>
+      <span class="crm-progress-label">Cargando pedidos...</span>
+    </div>
     <div x-show="!ordersLoading && !userOrders.length" style="text-align:center;padding:var(--sp-2xl);color:var(--text-3)">
-      <p>Aún no tienes pedidos. <a href="#/catalogo" style="color:var(--blue);font-weight:700">¡Descubre nuestros productos!</a></p>
+      <p>Aún no tienes pedidos. <a href="#/catalogo" style="color:var(--accent);font-weight:600">¡Descubre nuestros productos!</a></p>
     </div>
     <div style="display:flex;flex-direction:column;gap:var(--sp-lg)" x-show="userOrders.length">
       <template x-for="order in userOrders" :key="order.id">
@@ -1379,14 +1397,14 @@
               <p style="font-size:0.85rem;color:var(--text-2);margin-top:2px" x-text="formatDate(order.created_at)"></p>
             </div>
             <span class="status-badge" :class="'status-' + order.status" x-text="formatStatus(order.status)"></span>
-            <span style="font-family:var(--font-head);font-weight:900;color:var(--blue)" x-text="formatPrice(order.total)"></span>
+            <span style="font-weight:800;color:var(--text-1)" x-text="formatPrice(order.total)"></span>
           </div>
           <div class="order-card-body">
             <template x-for="item in (order.order_items||[])" :key="item.id">
               <div class="order-item-row">
                 <img class="order-item-img" :src="(item.product_snapshot && item.product_snapshot.image_url) || 'https://via.placeholder.com/56'" :alt="(item.product_snapshot && item.product_snapshot.name)">
                 <div>
-                  <p style="font-weight:700;font-family:var(--font-head);font-size:0.9rem" x-text="(item.product_snapshot && item.product_snapshot.name)"></p>
+                  <p style="font-weight:700;font-family:var(--font-sans);font-size:0.9rem" x-text="(item.product_snapshot && item.product_snapshot.name)"></p>
                   <p style="font-size:0.8rem;color:var(--text-3)">×<span x-text="item.quantity"></span> · <span x-text="formatPrice(item.unit_price)"></span></p>
                 </div>
               </div>
@@ -1400,9 +1418,9 @@
   <!-- ═══════════════════════════════════════════════════════
        CART DRAWER
   ═══════════════════════════════════════════════════════ -->
-  <div class="cart-overlay" x-show="cartOpen" style="display:none" @click="cartOpen=false"
+  <div class="cart-overlay" x-show="cartOpen" style="display:none" @click="cartOpen=false"></div>
 
-  <aside class="cart-drawer" x-show="cartOpen" style="display:none"
+  <aside class="cart-drawer" x-show="cartOpen" style="display:none">
     <div class="cart-drawer-header">
       <span class="cart-drawer-title">
         <svg style="width:22px;height:22px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
@@ -1417,7 +1435,7 @@
     <div class="cart-drawer-body">
       <div class="cart-empty" x-show="!cartItems.length">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
-        <p style="font-family:var(--font-head);font-weight:800">Tu carrito está vacío</p>
+        <p style="font-weight:700;color:var(--text-2);font-size:var(--text-sm)">Tu carrito está vacío</p>
         <button class="btn btn-primary" @click="cartOpen=false;navigate('/catalogo')">Explorar tienda</button>
       </div>
       <template x-for="item in cartItems" :key="item.product_id">
@@ -1462,8 +1480,8 @@
   <!-- ═══════════════════════════════════════════════════════
        AUTH MODAL
   ═══════════════════════════════════════════════════════ -->
-  <div class="modal-overlay" x-show="showAuthModal" style="display:none" @click.self="closeModal()"
-    <div class="modal"
+  <div class="modal-overlay" x-show="showAuthModal" style="display:none" @click.self="closeModal()">
+    <div class="modal">
       <button class="modal-close" @click="showAuthModal=false">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
@@ -1538,7 +1556,7 @@
   ═══════════════════════════════════════════════════════ -->
   <div class="toast-container">
     <template x-for="t in toasts" :key="t.id">
-      <div class="toast" :class="'toast-' + t.type" x-show="t.visible"
+      <div class="toast" :class="'toast-' + t.type" x-show="t.visible">
         <span x-text="t.message"></span>
       </div>
     </template>
@@ -1552,10 +1570,10 @@
       <div class="footer-brand">
         <div class="nav-logo">
           <span class="logo-curio">Curio</span>
-          <span class="logo-by" style="color:rgba(255,255,255,.4)">by</span>
+          <span class="logo-separator"></span>
           <span class="logo-fable">Fable</span>
         </div>
-        <p class="footer-tagline">Juguetes de madera para niños curiosos.<br>Fabricados con amor y madera FSC.</p>
+        <p class="footer-tagline">Objetos de madera para espacios únicos.<br>Diseño contemporáneo y artesanía certificada.</p>
       </div>
       <div>
         <h4 class="footer-col-title">Tienda</h4>
