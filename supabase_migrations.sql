@@ -390,6 +390,59 @@ VALUES
 ON CONFLICT (slug) DO NOTHING;
 
 -- ============================================================
+-- MINI CRM — Tabla de notas sobre clientes
+-- Ejecutar después del schema inicial si no estaba en el plan original
+-- ============================================================
+
+-- Enum para tipo de nota CRM
+DO $$ BEGIN
+  CREATE TYPE curio.crm_note_type AS ENUM (
+    'nota',
+    'llamada',
+    'email',
+    'reunion',
+    'seguimiento',
+    'incidencia',
+    'oportunidad'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Tabla de notas CRM
+CREATE TABLE IF NOT EXISTS curio.crm_notes (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id  UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  content      TEXT NOT NULL,
+  type         curio.crm_note_type DEFAULT 'nota',
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crm_notes_customer ON curio.crm_notes(customer_id);
+CREATE INDEX IF NOT EXISTS idx_crm_notes_created  ON curio.crm_notes(created_at DESC);
+
+-- RLS: solo service_role puede leer/escribir (solo acceso admin)
+ALTER TABLE curio.crm_notes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "crm_notes_service_only" ON curio.crm_notes;
+CREATE POLICY "crm_notes_service_only"
+  ON curio.crm_notes
+  USING (FALSE);  -- nadie accede vía anon/authenticated; solo service_role ignora RLS
+
+-- Trigger auto updated_at
+CREATE OR REPLACE FUNCTION curio.update_crm_note_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_crm_note_updated_at ON curio.crm_notes;
+CREATE TRIGGER trg_crm_note_updated_at
+  BEFORE UPDATE ON curio.crm_notes
+  FOR EACH ROW EXECUTE FUNCTION curio.update_crm_note_updated_at();
+
+-- ============================================================
 -- NOTAS POST-INSTALACIÓN
 -- ============================================================
 -- 1. Bucket "product-images" (público) ya existe en Storage ✅
@@ -399,4 +452,8 @@ ON CONFLICT (slug) DO NOTHING;
 --    b) Ve a Supabase Dashboard > Table Editor > profiles
 --    c) Encuentra tu fila y cambia is_admin a TRUE
 --    d) Guarda. Ya puedes acceder a /admin
+--
+-- 3. Mini CRM:
+--    La tabla curio.crm_notes almacena notas de seguimiento.
+--    Solo accesible vía service_role (endpoints admin).
 -- ============================================================

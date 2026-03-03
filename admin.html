@@ -14,9 +14,6 @@
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
-  <!-- Alpine.js -->
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-
   <!-- Config -->
   <script src="/public/config.js"></script>
 
@@ -26,8 +23,526 @@
   <link rel="stylesheet" href="/src/css/animations.css">
   <link rel="stylesheet" href="/src/css/admin.css">
 
-  <!-- Admin App JS -->
-  <script type="module" src="/src/js/admin.js"></script>
+  <!-- Admin App — inline para garantizar que Alpine.data se registra antes de alpine:init -->
+  <script>
+  (function() {
+    var cfg = window.__CURIO_CONFIG__ || {};
+    var sb;
+    try {
+      sb = window.supabase.createClient(cfg.supabaseUrl || '', cfg.supabaseAnon || '', {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      });
+    } catch(e) {
+      console.warn('[Admin] Supabase no disponible:', e.message);
+      sb = { auth: { getSession: function(){ return Promise.resolve({data:{session:null}}); }, onAuthStateChange: function(){}, signInWithPassword: function(){ return Promise.resolve({error:{message:'No disponible'}}); }, signOut: function(){ return Promise.resolve(); } }, from: function(){ return { select: function(){ return this; }, eq: function(){ return this; }, single: function(){ return Promise.resolve({data:null}); } }; } };
+    }
+
+    var fmt = {
+      price: function(n) { return Number(n).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }); },
+      date:  function(iso) { return iso ? new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; },
+      datetime: function(iso) { if (!iso) return '—'; return new Date(iso).toLocaleString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+    };
+
+    document.addEventListener('alpine:init', function() {
+      Alpine.data('adminApp', function() { return {
+        user: null, isAdmin: false, authLoading: false, authError: '',
+        loginEmail: '', loginPassword: '', sidebarOpen: false,
+        view: 'dashboard',
+        kpis: null, kpisLoading: false,
+        kpiModal: null, // { title, icon, value, description, rows: [{label, value}], tip }
+
+        adminProducts: [], productsLoading: false,
+        showProductForm: false, productFormMode: 'create', productFormId: null,
+        productFormLoading: false, productImageFile: null, productImagePreview: null,
+        productForm: { name:'', slug:'', description:'', long_description:'', price:'', compare_price:'', category:'juguetes_educativos', age_min:'0', age_max:'99', stock:'0', featured:false, active:true, material:'Madera maciza', dimensions:'' },
+        productSearch: '',
+        get filteredProducts() {
+          if (!this.productSearch) return this.adminProducts;
+          var q = this.productSearch.toLowerCase();
+          return this.adminProducts.filter(function(p){ return p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q); });
+        },
+        adminOrders: [], ordersLoading: false, ordersStatusFilter: '', orderSearch: '',
+        get filteredOrders() {
+          var list = this.adminOrders;
+          if (this.ordersStatusFilter) list = list.filter(function(o){ return o.status === this.ordersStatusFilter; }.bind(this));
+          if (this.orderSearch) { var q = this.orderSearch.toLowerCase(); list = list.filter(function(o){ return o.id.toLowerCase().includes(q) || (o.shipping_address && o.shipping_address.full_name && o.shipping_address.full_name.toLowerCase().includes(q)) || (o.user_profile && o.user_profile.email && o.user_profile.email.toLowerCase().includes(q)); }); }
+          return list;
+        },
+        adminUsers: [], usersLoading: false, userSearch: '',
+        get filteredUsers() {
+          if (!this.userSearch) return this.adminUsers;
+          var q = this.userSearch.toLowerCase();
+          return this.adminUsers.filter(function(u){ return (u.email && u.email.toLowerCase().includes(q)) || (u.full_name && u.full_name.toLowerCase().includes(q)); });
+        },
+        toasts: [],
+
+        init: function() {
+          var self = this;
+          sb.auth.getSession().then(function(res) {
+            if (res && res.data && res.data.session) {
+              self.user = res.data.session.user;
+              self.checkAdmin();
+            }
+          });
+          sb.auth.onAuthStateChange(function(event, session) {
+            self.user = session ? session.user : null;
+            if (self.user) self.checkAdmin();
+            else self.isAdmin = false;
+          });
+        },
+
+        checkAdmin: function() {
+          var self = this;
+          if (!this.user) { this.isAdmin = false; return; }
+          sb.from('profiles').select('is_admin').eq('id', this.user.id).single()
+            .then(function(res) {
+              self.isAdmin = res.data && res.data.is_admin === true;
+              if (self.isAdmin) self.loadDashboard();
+            });
+        },
+
+        login: function() {
+          var self = this;
+          if (!this.loginEmail || !this.loginPassword) { this.authError = 'Completa los campos.'; return; }
+          this.authLoading = true; this.authError = '';
+          sb.auth.signInWithPassword({ email: this.loginEmail, password: this.loginPassword })
+            .then(function(res) {
+              self.authLoading = false;
+              if (res.error) self.authError = 'Credenciales incorrectas o no tienes acceso de administrador.';
+            }).catch(function() { self.authLoading = false; self.authError = 'Error al iniciar sesión.'; });
+        },
+
+        loginWithGoogle: function() {
+          sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/admin.html' } });
+        },
+
+        logout: function() {
+          sb.auth.signOut();
+          this.user = null; this.isAdmin = false;
+        },
+
+        getToken: function() {
+          return sb.auth.getSession().then(function(res) {
+            return (res && res.data && res.data.session) ? res.data.session.access_token : '';
+          });
+        },
+
+        // ── CRM state ───────────────────────────────────────────
+        crmCustomers: [], crmLoading: false, crmSearch: '', crmSegmentFilter: 'all',
+        crmSegmentCounts: { vip: 0, recurrente: 0, nuevo: 0, inactivo: 0, visitante: 0 },
+        crmTotal: 0,
+        crmDetail: null, crmDetailLoading: false,
+        crmNoteContent: '', crmNoteType: 'nota', crmNoteSaving: false,
+        crmEditNoteId: null, crmEditNoteContent: '', crmEditNoteType: 'nota',
+
+        get filteredCrmCustomers() {
+          return this.crmCustomers; // Filtrado se hace en API
+        },
+
+        setView: function(v) {
+          var self = this;
+          this.view = v; this.sidebarOpen = false;
+          if (v === 'dashboard') this.loadDashboard();
+          if (v === 'products')  this.loadProducts();
+          if (v === 'orders')    this.loadOrders();
+          if (v === 'users')     this.loadUsers();
+          if (v === 'crm')       this.loadCrm();
+        },
+
+        openKpiModal: function(type) {
+          if (!this.kpis) return;
+          var k = this.kpis;
+          var modals = {
+            orders_today: {
+              icon: '📦', title: 'Pedidos de hoy',
+              value: k.orders.today + ' pedidos',
+              description: 'Número de pedidos realizados desde las 00:00 de hoy hasta ahora.',
+              rows: [
+                { label: 'Hoy',          value: k.orders.today + ' pedidos' },
+                { label: 'Esta semana',  value: k.orders.week  + ' pedidos' },
+                { label: 'Este mes',     value: k.orders.month + ' pedidos' },
+                { label: 'Crecimiento vs mes anterior', value: k.orders.growth ? (k.orders.growth > 0 ? '↑' : '↓') + Math.abs(k.orders.growth) + '%' : '—' },
+              ],
+              tip: 'Un buen ritmo es mantener consistencia diaria. Los picos suelen coincidir con campañas o fines de semana.'
+            },
+            revenue: {
+              icon: '💰', title: 'Revenue mensual',
+              value: this.formatPrice(k.revenue.month),
+              description: 'Ingresos totales de los últimos 30 días, excluyendo pedidos cancelados.',
+              rows: [
+                { label: 'Este mes',           value: this.formatPrice(k.revenue.month) },
+                { label: 'Crecimiento',        value: k.revenue.growth ? (k.revenue.growth > 0 ? '↑ +' : '↓ ') + Math.abs(k.revenue.growth) + '% vs mes anterior' : '—' },
+                { label: 'Ticket medio',       value: k.orders.month > 0 ? this.formatPrice(k.revenue.month / k.orders.month) : '—' },
+              ],
+              tip: 'El ticket medio te indica si debes trabajar en upselling o en aumentar el volumen de pedidos.'
+            },
+            users: {
+              icon: '👥', title: 'Usuarios registrados',
+              value: k.users.total + ' usuarios',
+              description: 'Total de cuentas registradas en la plataforma desde el inicio.',
+              rows: [
+                { label: 'Total acumulado',   value: k.users.total + ' usuarios' },
+                { label: 'Nuevos hoy',        value: k.users.new_today + ' usuarios' },
+                { label: 'Nuevos esta semana',value: k.users.new_week  + ' usuarios' },
+              ],
+              tip: 'Retener usuarios existentes es 5x más barato que adquirir nuevos. Fíjate en la ratio registro/compra.'
+            },
+            page_views: {
+              icon: '👁️', title: 'Visitas a la tienda',
+              value: k.page_views.today + ' visitas hoy',
+              description: 'Páginas vistas únicas por sesión. Cada visita a una URL diferente cuenta como una vista.',
+              rows: [
+                { label: 'Hoy',          value: k.page_views.today + ' visitas' },
+                { label: 'Esta semana',  value: k.page_views.week  + ' visitas' },
+              ],
+              tip: 'Compara visitas con pedidos para calcular tu tasa de conversión. Un ratio saludable es 1-3%.'
+            },
+            orders_month: {
+              icon: '📋', title: 'Pedidos este mes',
+              value: k.orders.month + ' pedidos',
+              description: 'Total de pedidos creados en los últimos 30 días, en cualquier estado.',
+              rows: [
+                { label: 'Este mes',     value: k.orders.month + ' pedidos' },
+                { label: 'Mes anterior', value: k.orders.growth !== null ? '~' + Math.round(k.orders.month / (1 + parseFloat(k.orders.growth)/100)) + ' pedidos' : '—' },
+                { label: 'Crecimiento',  value: k.orders.growth ? (parseFloat(k.orders.growth) >= 0 ? '↑ +' : '↓ ') + Math.abs(k.orders.growth) + '%' : '—' },
+              ],
+              tip: 'Un crecimiento sostenido del 10-20% mensual es excelente para un e-commerce en fase de crecimiento.'
+            },
+            stock: {
+              icon: '⚠️', title: 'Alertas de stock',
+              value: k.products.low_stock + ' productos con stock bajo',
+              description: 'Productos activos con menos de 5 unidades en stock. Requieren reposición pronto.',
+              rows: [
+                { label: 'Productos con stock bajo', value: k.products.low_stock + ' productos' },
+                { label: 'Total productos activos',  value: k.products.total + ' productos' },
+                { label: '% catálogo afectado',      value: k.products.total > 0 ? Math.round(k.products.low_stock / k.products.total * 100) + '%' : '0%' },
+              ],
+              tip: 'Gestiona el stock antes de lanzar campañas. Un producto sin stock puede costar clientes y reputación.'
+            },
+          };
+          this.kpiModal = modals[type] || null;
+        },
+
+        loadDashboard: function() {
+          var self = this;
+          this.kpisLoading = true;
+          this.getToken().then(function(token) {
+            return fetch('/api/admin/dashboard', { headers: { 'Authorization': 'Bearer ' + token } });
+          }).then(function(r) { return r.json(); })
+            .then(function(d) { self.kpis = d; })
+            .catch(function() { self.toast('Error cargando métricas.', 'error'); })
+            .finally(function() { self.kpisLoading = false; });
+        },
+
+        get revenueFormatted() { return this.kpis ? fmt.price(this.kpis.revenue && this.kpis.revenue.month || 0) : '—'; },
+        topProductsMax: function() {
+          if (!this.kpis || !this.kpis.top_products || !this.kpis.top_products.length) return 1;
+          return Math.max.apply(null, this.kpis.top_products.map(function(p){ return p.quantity; }));
+        },
+
+        loadProducts: function() {
+          var self = this;
+          this.productsLoading = true;
+          this.getToken().then(function(token) {
+            return fetch('/api/admin/products', { headers: { 'Authorization': 'Bearer ' + token } });
+          }).then(function(r) { return r.json(); })
+            .then(function(d) { self.adminProducts = d.products || []; })
+            .catch(function() { self.toast('Error cargando productos.', 'error'); })
+            .finally(function() { self.productsLoading = false; });
+        },
+
+        openCreateProduct: function() {
+          this.productFormMode = 'create'; this.productFormId = null;
+          this.productImageFile = null; this.productImagePreview = null;
+          this.productForm = { name:'', slug:'', description:'', long_description:'', price:'', compare_price:'', category:'juguetes_educativos', age_min:'0', age_max:'99', stock:'0', featured:false, active:true, material:'Madera maciza', dimensions:'' };
+          this.showProductForm = true;
+        },
+
+        openEditProduct: function(product) {
+          this.productFormMode = 'edit'; this.productFormId = product.id;
+          this.productImageFile = null; this.productImagePreview = (product.images && product.images[0]) || null;
+          this.productForm = { name: product.name, slug: product.slug, description: product.description || '', long_description: product.long_description || '', price: String(product.price), compare_price: product.compare_price ? String(product.compare_price) : '', category: product.category, age_min: String(product.age_min != null ? product.age_min : 0), age_max: String(product.age_max != null ? product.age_max : 99), stock: String(product.stock), featured: !!product.featured, active: product.active !== false, material: product.material || 'Madera maciza', dimensions: product.dimensions || '' };
+          this.showProductForm = true;
+        },
+
+        onImageSelected: function(event) {
+          var self = this;
+          var file = event.target.files[0];
+          if (!file) return;
+          this.productImageFile = file;
+          var reader = new FileReader();
+          reader.onload = function(e) { self.productImagePreview = e.target.result; };
+          reader.readAsDataURL(file);
+        },
+
+        autoSlug: function() {
+          this.productForm.slug = this.productForm.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-');
+        },
+
+        saveProduct: function() {
+          var self = this;
+          if (!this.productForm.name || !this.productForm.slug || !this.productForm.price || !this.productForm.category) {
+            this.toast('Rellena los campos obligatorios: nombre, slug, precio y categoría.', 'error'); return;
+          }
+          this.productFormLoading = true;
+          var payload = {};
+          for (var k in this.productForm) payload[k] = this.productForm[k];
+
+          var imagePromise = Promise.resolve(null);
+          if (this.productImageFile) {
+            imagePromise = this._fileToBase64(this.productImageFile);
+          }
+
+          var url    = this.productFormMode === 'create' ? '/api/admin/products' : '/api/admin/products?id=' + this.productFormId;
+          var method = this.productFormMode === 'create' ? 'POST' : 'PUT';
+          var mode   = this.productFormMode;
+
+          Promise.all([this.getToken(), imagePromise])
+            .then(function(results) {
+              var token = results[0];
+              var b64   = results[1];
+              if (b64) payload.image_base64 = b64;
+              return fetch(url, { method: method, headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify(payload) });
+            })
+            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+            .then(function(res) {
+              if (!res.ok) throw new Error(res.data.error || 'Error guardando producto.');
+              self.toast(mode === 'create' ? '✅ Producto creado correctamente.' : '✅ Producto actualizado.', 'success');
+              self.showProductForm = false;
+              self.loadProducts();
+            })
+            .catch(function(e) { self.toast(e.message, 'error'); })
+            .finally(function() { self.productFormLoading = false; });
+        },
+
+        deleteProduct: function(id, name) {
+          var self = this;
+          if (!confirm('¿Desactivar el producto "' + name + '"? Dejará de ser visible en la tienda.')) return;
+          this.getToken().then(function(token) {
+            return fetch('/api/admin/products?id=' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
+          }).then(function(r) {
+            if (r.ok) { self.toast('Producto desactivado.', 'success'); self.loadProducts(); }
+          }).catch(function() { self.toast('Error eliminando producto.', 'error'); });
+        },
+
+        loadOrders: function() {
+          var self = this;
+          this.ordersLoading = true;
+          this.getToken().then(function(token) {
+            return fetch('/api/admin/orders?limit=100', { headers: { 'Authorization': 'Bearer ' + token } });
+          }).then(function(r) { return r.json(); })
+            .then(function(d) { self.adminOrders = d.orders || []; })
+            .catch(function() { self.toast('Error cargando pedidos.', 'error'); })
+            .finally(function() { self.ordersLoading = false; });
+        },
+
+        updateOrderStatus: function(orderId, status) {
+          var self = this;
+          this.getToken().then(function(token) {
+            return fetch('/api/admin/orders?id=' + orderId, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ status: status }) });
+          }).then(function(r) {
+            if (r.ok) {
+              for (var i = 0; i < self.adminOrders.length; i++) { if (self.adminOrders[i].id === orderId) { self.adminOrders[i].status = status; break; } }
+              self.toast('Estado del pedido actualizado.', 'success');
+            }
+          }).catch(function() { self.toast('Error actualizando pedido.', 'error'); });
+        },
+
+        loadUsers: function() {
+          var self = this;
+          this.usersLoading = true;
+          this.getToken().then(function(token) {
+            return fetch('/api/admin/users?limit=100', { headers: { 'Authorization': 'Bearer ' + token } });
+          }).then(function(r) { return r.json(); })
+            .then(function(d) { self.adminUsers = d.users || []; })
+            .catch(function() { self.toast('Error cargando usuarios.', 'error'); })
+            .finally(function() { self.usersLoading = false; });
+        },
+
+        _fileToBase64: function(file) {
+          return new Promise(function(resolve, reject) {
+            if (file.size > 2 * 1024 * 1024) {
+              var canvas = document.createElement('canvas');
+              var img = new Image();
+              img.onload = function() {
+                var MAX = 1200, ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+                canvas.width = Math.round(img.width * ratio); canvas.height = Math.round(img.height * ratio);
+                canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
+              };
+              img.onerror = reject;
+              img.src = URL.createObjectURL(file);
+            } else {
+              var reader = new FileReader();
+              reader.onload = function(e) { resolve(e.target.result.split(',')[1]); };
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            }
+          });
+        },
+
+        toast: function(message, type) {
+          type = type || 'info';
+          var id = Date.now() + Math.random();
+          var t = { id: id, message: message, type: type, visible: true };
+          this.toasts.push(t);
+          var self = this;
+          setTimeout(function() { t.visible = false; setTimeout(function() { self.toasts = self.toasts.filter(function(x){ return x.id !== id; }); }, 400); }, 3800);
+        },
+
+        formatPrice:    function(n)   { return fmt.price(n); },
+        formatDate:     function(iso) { return fmt.date(iso); },
+        formatDatetime: function(iso) { return fmt.datetime(iso); },
+        formatCategory: function(slug) {
+          var map = { juguetes_educativos:'🧩 Juguetes Educativos', juegos_mesa:'🎲 Juegos de Mesa', decoracion_habitacion:'🏡 Decoración', mobiliario_montessori:'🪑 Montessori', puzzles:'🧸 Puzzles', construccion:'🏗️ Construcción', exterior:'🌳 Exterior' };
+          return map[slug] || slug;
+        },
+        formatStatus: function(s) {
+          var map = { pendiente:'Pendiente', procesando:'Procesando', enviado:'Enviado', entregado:'Entregado', cancelado:'Cancelado' };
+          return map[s] || s;
+        },
+        orderTotal: function(order) { return this.formatPrice(order.total); },
+
+        // ── CRM Methods ──────────────────────────────────────────
+        loadCrm: function() {
+          var self = this;
+          this.crmLoading = true;
+          var params = new URLSearchParams();
+          if (this.crmSearch) params.set('search', this.crmSearch);
+          if (this.crmSegmentFilter && this.crmSegmentFilter !== 'all') params.set('segment', this.crmSegmentFilter);
+          this.getToken().then(function(token) {
+            return fetch('/api/admin/crm?' + params.toString(), { headers: { 'Authorization': 'Bearer ' + token } });
+          }).then(function(r) { return r.json(); })
+            .then(function(d) {
+              self.crmCustomers = d.customers || [];
+              self.crmTotal = d.total || 0;
+              self.crmSegmentCounts = d.segment_counts || { vip: 0, recurrente: 0, nuevo: 0, inactivo: 0, visitante: 0 };
+            })
+            .catch(function() { self.toast('Error cargando CRM.', 'error'); })
+            .finally(function() { self.crmLoading = false; });
+        },
+
+        openCrmDetail: function(customerId) {
+          var self = this;
+          this.crmDetail = null;
+          this.crmDetailLoading = true;
+          this.crmNoteContent = ''; this.crmNoteType = 'nota';
+          this.crmEditNoteId = null;
+          this.getToken().then(function(token) {
+            return fetch('/api/admin/crm?id=' + customerId, { headers: { 'Authorization': 'Bearer ' + token } });
+          }).then(function(r) { return r.json(); })
+            .then(function(d) {
+              self.crmDetail = d;
+            })
+            .catch(function() { self.toast('Error cargando cliente.', 'error'); })
+            .finally(function() { self.crmDetailLoading = false; });
+        },
+
+        closeCrmDetail: function() {
+          this.crmDetail = null;
+          this.crmEditNoteId = null;
+        },
+
+        addCrmNote: function() {
+          var self = this;
+          if (!this.crmDetail || !this.crmNoteContent.trim()) { this.toast('Escribe una nota antes de guardar.', 'error'); return; }
+          this.crmNoteSaving = true;
+          this.getToken().then(function(token) {
+            return fetch('/api/admin/crm?action=note', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+              body: JSON.stringify({ customer_id: self.crmDetail.customer.id, content: self.crmNoteContent.trim(), type: self.crmNoteType })
+            });
+          }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+            .then(function(res) {
+              if (!res.ok) throw new Error(res.data.error || 'Error guardando nota');
+              self.crmDetail.notes.unshift(res.data.note);
+              self.crmNoteContent = ''; self.crmNoteType = 'nota';
+              self.toast('Nota guardada.', 'success');
+            })
+            .catch(function(e) { self.toast(e.message, 'error'); })
+            .finally(function() { self.crmNoteSaving = false; });
+        },
+
+        startEditNote: function(note) {
+          this.crmEditNoteId = note.id;
+          this.crmEditNoteContent = note.content;
+          this.crmEditNoteType = note.type;
+        },
+
+        saveEditNote: function(noteId) {
+          var self = this;
+          if (!this.crmEditNoteContent.trim()) { this.toast('El contenido no puede estar vacío.', 'error'); return; }
+          this.getToken().then(function(token) {
+            return fetch('/api/admin/crm?action=note&id=' + noteId, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+              body: JSON.stringify({ content: self.crmEditNoteContent.trim(), type: self.crmEditNoteType })
+            });
+          }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+            .then(function(res) {
+              if (!res.ok) throw new Error(res.data.error || 'Error editando nota');
+              var idx = self.crmDetail.notes.findIndex(function(n){ return n.id === noteId; });
+              if (idx !== -1) {
+                self.crmDetail.notes[idx].content = res.data.note.content;
+                self.crmDetail.notes[idx].type    = res.data.note.type;
+                self.crmDetail.notes[idx].updated_at = res.data.note.updated_at;
+              }
+              self.crmEditNoteId = null;
+              self.toast('Nota actualizada.', 'success');
+            })
+            .catch(function(e) { self.toast(e.message, 'error'); });
+        },
+
+        deleteNote: function(noteId) {
+          var self = this;
+          if (!confirm('¿Eliminar esta nota?')) return;
+          this.getToken().then(function(token) {
+            return fetch('/api/admin/crm?action=note&id=' + noteId, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
+          }).then(function(r) {
+            if (r.ok) {
+              self.crmDetail.notes = self.crmDetail.notes.filter(function(n){ return n.id !== noteId; });
+              self.toast('Nota eliminada.', 'success');
+            }
+          }).catch(function() { self.toast('Error eliminando nota.', 'error'); });
+        },
+
+        crmSegmentLabel: function(seg) {
+          var map = { vip: '👑 VIP', recurrente: '🔄 Recurrente', nuevo: '🆕 Nuevo', inactivo: '😴 Inactivo', visitante: '👀 Visitante' };
+          return map[seg] || seg;
+        },
+        crmSegmentClass: function(seg) {
+          var map = { vip: 'badge-red', recurrente: 'badge-blue', nuevo: 'badge-green', inactivo: 'badge-gray', visitante: 'badge-wood' };
+          return map[seg] || 'badge-gray';
+        },
+        crmNoteTypeLabel: function(t) {
+          var map = { nota: '📝 Nota', llamada: '📞 Llamada', email: '📧 Email', reunion: '🤝 Reunión', seguimiento: '🔔 Seguimiento', incidencia: '⚠️ Incidencia', oportunidad: '💡 Oportunidad' };
+          return map[t] || t;
+        },
+        crmNoteTypeClass: function(t) {
+          var map = { nota: 'badge-gray', llamada: 'badge-blue', email: 'badge-wood', reunion: 'badge-green', seguimiento: 'badge-yellow', incidencia: 'badge-red', oportunidad: 'badge-green' };
+          return map[t] || 'badge-gray';
+        },
+        _crmDetailSegment: function() {
+          if (!this.crmDetail) return 'visitante';
+          var c = this.crmDetail.customer;
+          var orders = c.total_orders || 0;
+          var spent  = c.total_spent  || 0;
+          var lastDate = c.last_order_date;
+          var daysSince = lastDate ? Math.floor((Date.now() - new Date(lastDate)) / 86400000) : Infinity;
+          if (orders === 0)              return 'visitante';
+          if (spent >= 200 || orders >= 5) return 'vip';
+          if (orders >= 2 && daysSince <= 90) return 'recurrente';
+          if (orders >= 1 && daysSince <= 30) return 'nuevo';
+          return 'inactivo';
+        },
+      }; });
+    });
+  })();
+  </script>
+
+  <!-- Alpine.js — al final para que el script inline se ejecute primero -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 </head>
 <body>
 <div x-data="adminApp" x-cloak>
@@ -78,7 +593,7 @@
   <div class="admin-root" x-show="user && isAdmin">
 
     <!-- Sidebar overlay (mobile) -->
-    <div class="overlay-bg" x-show="sidebarOpen" @click="sidebarOpen=false" style="z-index:99"></div>
+    <div class="overlay-bg" x-show="sidebarOpen" style="display:none;z-index:99" @click="sidebarOpen=false"></div>
 
     <!-- ── Sidebar ────────────────────────────────────────── -->
     <aside class="admin-sidebar" :class="{open: sidebarOpen}">
@@ -116,6 +631,14 @@
         <button class="sidebar-nav-item" :class="{active:view==='users'}" @click="setView('users')">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
           Usuarios
+        </button>
+
+        <span class="sidebar-section-label">Ventas</span>
+
+        <button class="sidebar-nav-item" :class="{active:view==='crm'}" @click="setView('crm')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+          Mini CRM
+          <span class="badge badge-green" style="margin-left:auto" x-show="crmSegmentCounts.vip > 0" x-text="crmSegmentCounts.vip + ' VIP'"></span>
         </button>
       </nav>
 
@@ -159,6 +682,7 @@
           <span x-show="view==='products'">📦 Productos</span>
           <span x-show="view==='orders'">🧾 Pedidos</span>
           <span x-show="view==='users'">👥 Usuarios</span>
+          <span x-show="view==='crm'">🤝 Mini CRM</span>
         </h1>
         <div class="flex items-center gap-md">
           <span style="font-size:0.8rem;color:var(--text-3)" x-text="new Date().toLocaleDateString('es-ES',{weekday:'long',day:'2-digit',month:'long'})"></span>
@@ -180,55 +704,61 @@
 
             <!-- KPI Cards -->
             <div class="kpi-grid">
-              <div class="kpi-card kpi-blue">
+              <div class="kpi-card kpi-blue kpi-clickable" @click="openKpiModal('orders_today')">
+                <div class="kpi-card-hint">Ver detalle →</div>
                 <div class="kpi-icon">📦</div>
                 <div class="kpi-label">Pedidos hoy</div>
-                <div class="kpi-value" x-text="kpis?.orders?.today || 0"></div>
-                <div class="kpi-sub">Esta semana: <strong x-text="kpis?.orders?.week || 0"></strong></div>
+                <div class="kpi-value" x-text="kpis.orders.today || 0"></div>
+                <div class="kpi-sub">Esta semana: <strong x-text="kpis.orders.week || 0"></strong></div>
               </div>
 
-              <div class="kpi-card kpi-green">
+              <div class="kpi-card kpi-green kpi-clickable" @click="openKpiModal('revenue')">
+                <div class="kpi-card-hint">Ver detalle →</div>
                 <div class="kpi-icon">💰</div>
                 <div class="kpi-label">Revenue mensual</div>
                 <div class="kpi-value" x-text="revenueFormatted"></div>
-                <div class="kpi-sub" x-show="kpis?.revenue?.growth">
-                  <span class="kpi-growth" :class="parseFloat(kpis?.revenue?.growth) >= 0 ? 'up' : 'down'"
-                        x-text="(parseFloat(kpis?.revenue?.growth) >= 0 ? '↑' : '↓') + Math.abs(kpis?.revenue?.growth) + '%'"></span>
+                <div class="kpi-sub" x-show="kpis.revenue.growth">
+                  <span class="kpi-growth" :class="parseFloat(kpis.revenue.growth) >= 0 ? 'up' : 'down'"
+                        x-text="(parseFloat(kpis.revenue.growth) >= 0 ? '↑' : '↓') + Math.abs(kpis.revenue.growth) + '%'"></span>
                   vs mes anterior
                 </div>
               </div>
 
-              <div class="kpi-card kpi-wood">
+              <div class="kpi-card kpi-wood kpi-clickable" @click="openKpiModal('users')">
+                <div class="kpi-card-hint">Ver detalle →</div>
                 <div class="kpi-icon">👥</div>
                 <div class="kpi-label">Total usuarios</div>
-                <div class="kpi-value" x-text="kpis?.users?.total || 0"></div>
-                <div class="kpi-sub">Nuevos esta semana: <strong x-text="kpis?.users?.new_week || 0"></strong></div>
+                <div class="kpi-value" x-text="kpis.users.total || 0"></div>
+                <div class="kpi-sub">Nuevos esta semana: <strong x-text="kpis.users.new_week || 0"></strong></div>
               </div>
 
-              <div class="kpi-card kpi-yellow">
+              <div class="kpi-card kpi-yellow kpi-clickable" @click="openKpiModal('page_views')">
+                <div class="kpi-card-hint">Ver detalle →</div>
                 <div class="kpi-icon">👁️</div>
                 <div class="kpi-label">Visitas hoy</div>
-                <div class="kpi-value" x-text="kpis?.page_views?.today || 0"></div>
-                <div class="kpi-sub">Esta semana: <strong x-text="kpis?.page_views?.week || 0"></strong></div>
+                <div class="kpi-value" x-text="kpis.page_views.today || 0"></div>
+                <div class="kpi-sub">Esta semana: <strong x-text="kpis.page_views.week || 0"></strong></div>
               </div>
 
-              <div class="kpi-card kpi-red">
+              <div class="kpi-card kpi-red kpi-clickable" @click="openKpiModal('orders_month')">
+                <div class="kpi-card-hint">Ver detalle →</div>
                 <div class="kpi-icon">📋</div>
                 <div class="kpi-label">Pedidos este mes</div>
-                <div class="kpi-value" x-text="kpis?.orders?.month || 0"></div>
-                <div class="kpi-sub" x-show="kpis?.orders?.growth">
-                  <span class="kpi-growth" :class="parseFloat(kpis?.orders?.growth) >= 0 ? 'up' : 'down'"
-                        x-text="(parseFloat(kpis?.orders?.growth) >= 0 ? '↑' : '↓') + Math.abs(kpis?.orders?.growth) + '%'"></span>
+                <div class="kpi-value" x-text="kpis.orders.month || 0"></div>
+                <div class="kpi-sub" x-show="kpis.orders.growth">
+                  <span class="kpi-growth" :class="parseFloat(kpis.orders.growth) >= 0 ? 'up' : 'down'"
+                        x-text="(parseFloat(kpis.orders.growth) >= 0 ? '↑' : '↓') + Math.abs(kpis.orders.growth) + '%'"></span>
                   vs mes anterior
                 </div>
               </div>
 
-              <div class="kpi-card" style="border-color: var(--border)">
+              <div class="kpi-card kpi-clickable" @click="openKpiModal('stock')">
+                <div class="kpi-card-hint">Ver detalle →</div>
                 <div class="kpi-icon" style="background:var(--surface-2)">⚠️</div>
                 <div class="kpi-label">Stock bajo</div>
-                <div class="kpi-value" :style="(kpis?.products?.low_stock||0) > 0 ? 'color:var(--warning)' : 'color:var(--success)'"
-                     x-text="kpis?.products?.low_stock || 0"></div>
-                <div class="kpi-sub">de <strong x-text="kpis?.products?.total || 0"></strong> productos activos</div>
+                <div class="kpi-value" :style="(kpis.products.low_stock||0) > 0 ? 'color:var(--warning)' : 'color:var(--success)'"
+                     x-text="kpis.products.low_stock || 0"></div>
+                <div class="kpi-sub">de <strong x-text="kpis.products.total || 0"></strong> productos activos</div>
               </div>
             </div>
 
@@ -508,20 +1038,294 @@
           </div>
         </div>
 
+        <!-- ════════════════════════════════════════════════
+             CRM VIEW
+        ════════════════════════════════════════════════ -->
+        <div x-show="view==='crm'">
+
+          <!-- Segment pills -->
+          <div class="crm-segment-bar">
+            <button class="crm-segment-pill" :class="{active: crmSegmentFilter==='all'}" @click="crmSegmentFilter='all'; loadCrm()">
+              Todos <span class="crm-segment-count" x-text="crmTotal"></span>
+            </button>
+            <button class="crm-segment-pill crm-pill-vip" :class="{active: crmSegmentFilter==='vip'}" @click="crmSegmentFilter='vip'; loadCrm()">
+              👑 VIP <span class="crm-segment-count" x-text="crmSegmentCounts.vip"></span>
+            </button>
+            <button class="crm-segment-pill crm-pill-recurrente" :class="{active: crmSegmentFilter==='recurrente'}" @click="crmSegmentFilter='recurrente'; loadCrm()">
+              🔄 Recurrentes <span class="crm-segment-count" x-text="crmSegmentCounts.recurrente"></span>
+            </button>
+            <button class="crm-segment-pill crm-pill-nuevo" :class="{active: crmSegmentFilter==='nuevo'}" @click="crmSegmentFilter='nuevo'; loadCrm()">
+              🆕 Nuevos <span class="crm-segment-count" x-text="crmSegmentCounts.nuevo"></span>
+            </button>
+            <button class="crm-segment-pill crm-pill-inactivo" :class="{active: crmSegmentFilter==='inactivo'}" @click="crmSegmentFilter='inactivo'; loadCrm()">
+              😴 Inactivos <span class="crm-segment-count" x-text="crmSegmentCounts.inactivo"></span>
+            </button>
+            <button class="crm-segment-pill crm-pill-visitante" :class="{active: crmSegmentFilter==='visitante'}" @click="crmSegmentFilter='visitante'; loadCrm()">
+              👀 Visitantes <span class="crm-segment-count" x-text="crmSegmentCounts.visitante"></span>
+            </button>
+          </div>
+
+          <!-- Search + actions -->
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <h3 class="admin-card-title">🤝 Clientes</h3>
+              <div class="flex items-center gap-md">
+                <div class="admin-search">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                  <input class="form-control" type="text" placeholder="Buscar por email o nombre..." x-model="crmSearch" @keydown.enter="loadCrm()">
+                </div>
+                <button class="btn btn-ghost btn-sm" @click="loadCrm()">🔄</button>
+              </div>
+            </div>
+
+            <div class="crm-legend" style="padding:var(--sp-sm) var(--sp-lg);font-size:0.78rem;color:var(--text-3);border-bottom:1px solid var(--border)">
+              💡 <strong>Segmentación:</strong> VIP (≥5 pedidos o ≥200€) · Recurrente (≥2 pedidos, activo 90 días) · Nuevo (1 pedido, último mes) · Inactivo (compró pero sin actividad reciente) · Visitante (sin compras)
+            </div>
+
+            <div x-show="crmLoading" class="spinner" style="margin:var(--sp-xl)"></div>
+            <div x-show="!crmLoading && !crmCustomers.length" style="padding:var(--sp-xl);text-align:center;color:var(--text-3)">Sin clientes en este segmento</div>
+
+            <div style="overflow-x:auto" x-show="!crmLoading && crmCustomers.length">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Segmento</th>
+                    <th>Pedidos</th>
+                    <th>Total gastado</th>
+                    <th>Último pedido</th>
+                    <th>Última visita</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="c in crmCustomers" :key="c.id">
+                    <tr class="crm-customer-row" @click="openCrmDetail(c.id)" style="cursor:pointer">
+                      <td>
+                        <div class="flex items-center gap-sm">
+                          <div class="crm-avatar" x-text="(c.full_name || c.email)?.[0]?.toUpperCase()"></div>
+                          <div>
+                            <div style="font-weight:700;font-size:0.9rem" x-text="c.full_name || '—'"></div>
+                            <div style="font-size:0.75rem;color:var(--text-3)" x-text="c.email"></div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="badge" :class="crmSegmentClass(c.segment)" x-text="crmSegmentLabel(c.segment)"></span>
+                      </td>
+                      <td>
+                        <span class="badge" :class="c.total_orders > 0 ? 'badge-blue' : 'badge-gray'" x-text="c.total_orders + ' pedidos'"></span>
+                      </td>
+                      <td style="font-family:var(--font-head);font-weight:800;color:var(--blue)" x-text="c.total_spent > 0 ? formatPrice(c.total_spent) : '—'"></td>
+                      <td style="font-size:0.85rem;color:var(--text-3)" x-text="c.last_order_date ? formatDate(c.last_order_date) : '—'"></td>
+                      <td style="font-size:0.85rem;color:var(--text-3)" x-text="c.last_visit_date ? formatDate(c.last_visit_date) : '—'"></td>
+                      <td>
+                        <button class="btn btn-ghost btn-sm" @click.stop="openCrmDetail(c.id)">Ver perfil →</button>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div><!-- /crm view -->
+
       </div><!-- /admin-content -->
     </main>
   </div><!-- /admin-root -->
 
   <!-- ═══════════════════════════════════════════════════════
+       CRM CUSTOMER DETAIL PANEL
+  ═══════════════════════════════════════════════════════ -->
+  <!-- Overlay -->
+  <div class="overlay-bg" x-show="crmDetail !== null || crmDetailLoading" style="display:none;z-index:399" @click="closeCrmDetail()"></div>
+
+  <!-- Panel -->
+  <div class="admin-form-panel crm-detail-panel" x-show="crmDetail !== null || crmDetailLoading" style="display:none">
+    <!-- Loading state -->
+    <div x-show="crmDetailLoading && !crmDetail" style="padding:var(--sp-xl);text-align:center">
+      <div class="spinner"></div>
+    </div>
+
+    <template x-if="crmDetail">
+      <div style="display:contents">
+        <div class="form-panel-header">
+          <div>
+            <div class="flex items-center gap-md">
+              <div class="crm-avatar crm-avatar-lg" x-text="(crmDetail.customer.full_name || crmDetail.customer.email)?.[0]?.toUpperCase()"></div>
+              <div>
+                <h2 class="form-panel-title" x-text="crmDetail.customer.full_name || crmDetail.customer.email"></h2>
+                <div class="flex items-center gap-sm" style="margin-top:4px">
+                  <span class="badge" :class="crmSegmentClass(_crmDetailSegment())" x-text="crmSegmentLabel(_crmDetailSegment())"></span>
+                  <span style="font-size:0.8rem;color:var(--text-3)" x-text="crmDetail.customer.email"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button class="cart-close-btn" @click="closeCrmDetail()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="form-panel-body">
+
+          <!-- KPI pills del cliente -->
+          <div class="crm-kpi-row">
+            <div class="crm-kpi-pill">
+              <span class="crm-kpi-label">Pedidos</span>
+              <span class="crm-kpi-val" x-text="crmDetail.customer.total_orders"></span>
+            </div>
+            <div class="crm-kpi-pill">
+              <span class="crm-kpi-label">Total gastado</span>
+              <span class="crm-kpi-val" x-text="formatPrice(crmDetail.customer.total_spent)"></span>
+            </div>
+            <div class="crm-kpi-pill">
+              <span class="crm-kpi-label">Último pedido</span>
+              <span class="crm-kpi-val" x-text="crmDetail.customer.last_order_date ? formatDate(crmDetail.customer.last_order_date) : '—'"></span>
+            </div>
+            <div class="crm-kpi-pill">
+              <span class="crm-kpi-label">Cliente desde</span>
+              <span class="crm-kpi-val" x-text="formatDate(crmDetail.customer.created_at)"></span>
+            </div>
+          </div>
+
+          <!-- Contacto -->
+          <div class="crm-section">
+            <h4 class="crm-section-title">📋 Datos de contacto</h4>
+            <div class="crm-info-grid">
+              <div class="crm-info-item">
+                <span class="crm-info-label">Email</span>
+                <span class="crm-info-val" x-text="crmDetail.customer.email || '—'"></span>
+              </div>
+              <div class="crm-info-item">
+                <span class="crm-info-label">Teléfono</span>
+                <span class="crm-info-val" x-text="crmDetail.customer.phone || '—'"></span>
+              </div>
+              <div class="crm-info-item">
+                <span class="crm-info-label">Nombre</span>
+                <span class="crm-info-val" x-text="crmDetail.customer.full_name || '—'"></span>
+              </div>
+              <div class="crm-info-item" x-show="crmDetail.orders.length">
+                <span class="crm-info-label">Dirección (último pedido)</span>
+                <span class="crm-info-val" x-text="crmDetail.orders[0]?.shipping_address?.address || '—'"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Historial de pedidos -->
+          <div class="crm-section">
+            <h4 class="crm-section-title">🧾 Historial de pedidos (<span x-text="crmDetail.orders.length"></span>)</h4>
+            <div x-show="!crmDetail.orders.length" style="color:var(--text-3);font-size:0.9rem">Sin pedidos realizados</div>
+            <div class="crm-orders-list">
+              <template x-for="order in crmDetail.orders" :key="order.id">
+                <div class="crm-order-row">
+                  <div class="crm-order-id" x-text="'#' + order.id.slice(0,8)"></div>
+                  <div style="flex:1">
+                    <div class="flex items-center gap-sm flex-wrap">
+                      <span class="status-badge" :class="'status-' + order.status" x-text="formatStatus(order.status)"></span>
+                      <span style="font-size:0.8rem;color:var(--text-3)" x-text="(order.order_items?.length || 0) + ' productos'"></span>
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-3);margin-top:2px" x-text="formatDatetime(order.created_at)"></div>
+                  </div>
+                  <div style="font-family:var(--font-head);font-weight:900;color:var(--blue);white-space:nowrap" x-text="formatPrice(order.total)"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Páginas visitadas recientemente -->
+          <div class="crm-section" x-show="crmDetail.recent_pages.length">
+            <h4 class="crm-section-title">👁️ Páginas vistas recientemente</h4>
+            <div class="crm-pages-list">
+              <template x-for="(pv, idx) in crmDetail.recent_pages" :key="idx">
+                <div class="crm-page-chip">
+                  <span x-text="pv.page || '/'"></span>
+                  <span style="font-size:0.7rem;color:var(--text-3)" x-text="formatDate(pv.created_at)"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Notas CRM -->
+          <div class="crm-section">
+            <h4 class="crm-section-title">📝 Notas de seguimiento (<span x-text="crmDetail.notes.length"></span>)</h4>
+
+            <!-- Formulario nueva nota -->
+            <div class="crm-note-form">
+              <select class="form-control" style="width:auto;min-width:150px" x-model="crmNoteType">
+                <option value="nota">📝 Nota</option>
+                <option value="llamada">📞 Llamada</option>
+                <option value="email">📧 Email</option>
+                <option value="reunion">🤝 Reunión</option>
+                <option value="seguimiento">🔔 Seguimiento</option>
+                <option value="incidencia">⚠️ Incidencia</option>
+                <option value="oportunidad">💡 Oportunidad</option>
+              </select>
+              <textarea class="form-control crm-note-textarea" rows="2" x-model="crmNoteContent"
+                        placeholder="Añade una nota sobre este cliente..."></textarea>
+              <button class="btn btn-primary btn-sm" @click="addCrmNote()" :disabled="crmNoteSaving || !crmNoteContent.trim()">
+                <span x-show="!crmNoteSaving">Guardar nota</span>
+                <span x-show="crmNoteSaving">Guardando...</span>
+              </button>
+            </div>
+
+            <!-- Lista de notas -->
+            <div class="crm-notes-list">
+              <div x-show="!crmDetail.notes.length" style="color:var(--text-3);font-size:0.9rem;padding:var(--sp-md) 0">Sin notas todavía</div>
+              <template x-for="note in crmDetail.notes" :key="note.id">
+                <div class="crm-note-item">
+                  <!-- Vista normal -->
+                  <div x-show="crmEditNoteId !== note.id">
+                    <div class="crm-note-header">
+                      <span class="badge" :class="crmNoteTypeClass(note.type)" x-text="crmNoteTypeLabel(note.type)"></span>
+                      <span class="crm-note-date" x-text="formatDatetime(note.created_at)"></span>
+                      <div class="crm-note-actions">
+                        <button class="btn btn-ghost btn-xs" @click="startEditNote(note)" title="Editar">✏️</button>
+                        <button class="btn btn-ghost btn-xs" @click="deleteNote(note.id)" title="Eliminar">🗑️</button>
+                      </div>
+                    </div>
+                    <p class="crm-note-content" x-text="note.content"></p>
+                    <div x-show="note.updated_at && note.updated_at !== note.created_at" style="font-size:0.72rem;color:var(--text-3);margin-top:4px">
+                      Editado: <span x-text="formatDatetime(note.updated_at)"></span>
+                    </div>
+                  </div>
+                  <!-- Modo edición -->
+                  <div x-show="crmEditNoteId === note.id">
+                    <div class="crm-note-edit-form">
+                      <select class="form-control" style="width:auto;min-width:150px" x-model="crmEditNoteType">
+                        <option value="nota">📝 Nota</option>
+                        <option value="llamada">📞 Llamada</option>
+                        <option value="email">📧 Email</option>
+                        <option value="reunion">🤝 Reunión</option>
+                        <option value="seguimiento">🔔 Seguimiento</option>
+                        <option value="incidencia">⚠️ Incidencia</option>
+                        <option value="oportunidad">💡 Oportunidad</option>
+                      </select>
+                      <textarea class="form-control crm-note-textarea" rows="2" x-model="crmEditNoteContent"></textarea>
+                      <div class="flex gap-sm">
+                        <button class="btn btn-primary btn-sm" @click="saveEditNote(note.id)">Guardar</button>
+                        <button class="btn btn-ghost btn-sm" @click="crmEditNoteId=null">Cancelar</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </div><!-- /form-panel-body -->
+      </div>
+    </template>
+  </div><!-- /crm-detail-panel -->
+
+  <!-- ═══════════════════════════════════════════════════════
        PRODUCT FORM PANEL (slide-in)
   ═══════════════════════════════════════════════════════ -->
   <!-- Overlay -->
-  <div class="overlay-bg" x-show="showProductForm" @click="showProductForm=false" style="z-index:299"></div>
+  <div class="overlay-bg" x-show="showProductForm" style="display:none;z-index:299" @click="showProductForm=false"></div>
 
   <!-- Panel -->
-  <div class="admin-form-panel" x-show="showProductForm"
-       x-transition:enter="drawer-enter" x-transition:enter-start="drawer-start" x-transition:enter-end="drawer-end"
-       x-transition:leave="drawer-leave" x-transition:leave-to="drawer-leave-to">
+  <div class="admin-form-panel" x-show="showProductForm" style="display:none">
 
     <div class="form-panel-header">
       <h2 class="form-panel-title">
@@ -660,6 +1464,40 @@
         <span x-text="t.message"></span>
       </div>
     </template>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       KPI DETAIL MODAL
+  ═══════════════════════════════════════════════════════ -->
+  <div class="kpi-modal-overlay" x-show="kpiModal" style="display:none" @click.self="kpiModal=null">
+    <div class="kpi-modal" x-show="kpiModal" style="display:none">
+      <div class="kpi-modal-header">
+        <div class="kpi-modal-icon" x-text="kpiModal && kpiModal.icon"></div>
+        <div>
+          <div class="kpi-modal-title" x-text="kpiModal && kpiModal.title"></div>
+          <div class="kpi-modal-desc" x-text="kpiModal && kpiModal.description"></div>
+        </div>
+        <button class="kpi-modal-close" @click="kpiModal=null">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="kpi-modal-value" x-text="kpiModal && kpiModal.value"></div>
+
+      <div class="kpi-modal-rows">
+        <template x-for="row in (kpiModal && kpiModal.rows || [])" :key="row.label">
+          <div class="kpi-modal-row">
+            <span class="kpi-modal-row-label" x-text="row.label"></span>
+            <span class="kpi-modal-row-value" x-text="row.value"></span>
+          </div>
+        </template>
+      </div>
+
+      <div class="kpi-modal-tip">
+        <span class="kpi-modal-tip-icon">💡</span>
+        <span x-text="kpiModal && kpiModal.tip"></span>
+      </div>
+    </div>
   </div>
 
 </div><!-- /x-data -->
