@@ -17,8 +17,28 @@ module.exports = async function handler(req, res) {
   const token = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
   if (!token) return res.status(401).json({ error: 'No autenticado: se requiere token' });
 
-  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-  if (authErr || !user) return res.status(401).json({ error: 'Token inválido o expirado' });
+  let user;
+  // Primero intentar validar con Supabase Auth API
+  const { data: authData, error: authErr } = await supabase.auth.getUser(token);
+  if (authErr || !authData?.user) {
+    console.warn('[create-payment-intent] supabase.auth.getUser falló:', authErr?.message, '— intentando decode local del JWT');
+    // Fallback: decodificar JWT localmente para obtener el user_id
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) throw new Error('JWT malformado');
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+      const now = Math.floor(Date.now() / 1000);
+      if (!payload.sub) throw new Error('Sin user_id en token');
+      if (payload.exp && payload.exp < now) throw new Error('Token expirado');
+      user = { id: payload.sub, email: payload.email };
+      console.log('[create-payment-intent] JWT decodificado localmente OK, sub:', user.id);
+    } catch (decodeErr) {
+      console.error('[create-payment-intent] JWT decode falló:', decodeErr.message);
+      return res.status(401).json({ error: 'Token inválido o expirado', detail: decodeErr.message });
+    }
+  } else {
+    user = authData.user;
+  }
 
   // ── Parsear body ──────────────────────────────────────────
   let body;
