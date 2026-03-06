@@ -584,31 +584,49 @@
           this.checkoutLoading = true;
           this.paymentError    = '';
 
-          sb.auth.getSession()
-            .then(function(res) {
-              var token = (res && res.data && res.data.session) ? res.data.session.access_token : '';
+          // Forzar refresh del token para garantizar JWT fresco
+          sb.auth.refreshSession()
+            .then(function(refreshRes) {
+              var token = (refreshRes && refreshRes.data && refreshRes.data.session)
+                ? refreshRes.data.session.access_token : null;
+              if (!token) {
+                // Refresh falló (sesión expirada) → forzar re-login
+                return sb.auth.signOut().then(function() {
+                  self.user = null;
+                  self.checkoutLoading = false;
+                  self.toast('Tu sesión ha expirado. Inicia sesión de nuevo.', 'error');
+                  self.openLogin();
+                });
+              }
               return fetch('/api/create-payment-intent', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                 body:    JSON.stringify({
-                  items: self.cartItems.map(function(i) { return { product_id: i.product_id, quantity: i.quantity }; }),
+                  items: self.cartItems.map(function(i) { return { product_id: i.product_id, slug: i.slug, quantity: i.quantity }; }),
                   shipping_address: self.shippingForm,
                 }),
+              })
+              .then(function(r) {
+                return r.json().then(function(d) {
+                  if (r.status === 401) {
+                    return sb.auth.signOut().then(function() {
+                      self.user = null;
+                      self.checkoutLoading = false;
+                      self.toast('Sesión expirada. Por favor, inicia sesión de nuevo.', 'error');
+                      self.openLogin();
+                    });
+                  }
+                  if (!r.ok) throw new Error(d.error || 'Error al preparar el pago.');
+                  return d;
+                });
+              })
+              .then(function(d) {
+                if (!d || !d.client_secret) return;
+                self._clientSecret   = d.client_secret;
+                self._pendingOrderId = d.order_id;
+                self.checkoutStep    = 2;
+                setTimeout(function() { self._mountStripeElement(); }, 80);
               });
-            })
-            .then(function(r) {
-              return r.json().then(function(d) {
-                if (!r.ok) throw new Error(d.error || 'Error al preparar el pago.');
-                return d;
-              });
-            })
-            .then(function(d) {
-              self._clientSecret   = d.client_secret;
-              self._pendingOrderId = d.order_id;
-              self.checkoutStep    = 2;
-
-              // Montar Stripe en el siguiente frame de pintado
-              setTimeout(function() { self._mountStripeElement(); }, 80);
             })
             .catch(function(e) { self.toast(e.message || 'Error al preparar el pago.', 'error'); })
             .finally(function() { self.checkoutLoading = false; });
@@ -673,9 +691,10 @@
               return;
             }
             // Verificar server-side
-            return sb.auth.getSession()
-              .then(function(res) {
-                var token = (res && res.data && res.data.session) ? res.data.session.access_token : '';
+            return sb.auth.refreshSession()
+              .then(function(refreshRes) {
+                var token = (refreshRes && refreshRes.data && refreshRes.data.session)
+                  ? refreshRes.data.session.access_token : '';
                 return fetch('/api/confirm-order', {
                   method:  'POST',
                   headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
