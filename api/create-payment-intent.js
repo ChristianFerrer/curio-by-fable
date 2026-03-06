@@ -49,6 +49,27 @@ module.exports = async function handler(req, res) {
 
   const productMap = Object.fromEntries((products || []).map(p => [p.id, p]));
 
+  // Fallback: si algún item no se encontró por ID (ej. IDs del seed en caché),
+  // intentar buscarlo por slug y reparar el product_id con el real de la BD.
+  const missingItems = items.filter(i => !productMap[i.product_id] && i.slug);
+  if (missingItems.length > 0) {
+    const slugs = [...new Set(missingItems.map(i => i.slug))];
+    const { data: bySlug } = await supabase
+      .schema('curio').from('products')
+      .select('id, name, slug, price, stock, images, active, category')
+      .in('slug', slugs)
+      .eq('active', true);
+    if (bySlug) {
+      const slugMap = Object.fromEntries(bySlug.map(p => [p.slug, p]));
+      for (const item of items) {
+        if (!productMap[item.product_id] && item.slug && slugMap[item.slug]) {
+          item.product_id          = slugMap[item.slug].id;
+          productMap[item.product_id] = slugMap[item.slug];
+        }
+      }
+    }
+  }
+
   let subtotal = 0;
   const orderItems = [];
 

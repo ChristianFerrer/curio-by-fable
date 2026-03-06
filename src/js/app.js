@@ -484,7 +484,7 @@ window.app = function() { return ({
           method:  'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body:    JSON.stringify({
-            items:            this.cartItems.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+            items:            this.cartItems.map(i => ({ product_id: i.product_id, slug: i.slug, quantity: i.quantity })),
             shipping_address: this.shippingForm,
           }),
         });
