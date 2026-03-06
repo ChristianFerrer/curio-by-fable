@@ -1,61 +1,63 @@
 /* ============================================================
-   CURIO BY FABLE — Design System v2
-   Inspiración: Apple.com · Madera Premium · Innovación
-   Filosofía: Dark, espacioso, tipografía grande, minimalismo
+   CURIO BY FABLE — Design System v3
+   Inspiración: bitti-gitti.com · Artesanía cálida · Juego
+   Filosofía: Blanco limpio, dorado ámbar, Oswald + Quicksand
    ============================================================ */
 
 /* ── Tokens ───────────────────────────────────────────────── */
 :root {
-  /* Brand: madera cálida */
-  --wood-50:  #fdf8f0;
-  --wood-100: #f0e6d0;
-  --wood-200: #dcc49a;
-  --wood-300: #c4a06a;
-  --wood-400: #a67c52;   /* acento principal — tierra profunda */
-  --wood-500: #7d5c38;
-  --wood-600: #543d22;
+  /* Brand: dorado ámbar (bitti-gitti inspired) */
+  --amber-50:  #fffdf5;
+  --amber-100: #fff8e1;
+  --amber-200: #ffeaa0;
+  --amber-300: #ffd05c;
+  --amber-400: #ffb03a;   /* acento principal — golden bitti-gitti */
+  --amber-500: #e59600;
+  --amber-600: #c07d00;
 
-  /* Paleta lino/beige — sistema de superficies */
-  --linen-50:  #faf8f5;  /* blanco roto cálido */
-  --linen-100: #f2ede6;  /* superficie principal */
-  --linen-200: #e6dfd5;  /* superficie elevada */
-  --linen-300: #d1ccc0;  /* bg base — el color del usuario */
-  --linen-400: #b8b2a7;  /* borde suave */
-  --linen-500: #9b9590;  /* borde medio */
+  /* Paleta crema/blanco — sistema de superficies */
+  --linen-50:  #fafaf8;  /* blanco cálido suave */
+  --linen-100: #ffffff;  /* blanco puro — cards */
+  --linen-200: #f5f3ef;  /* superficie elevada */
+  --linen-300: #eceae4;  /* bg suave */
+  --linen-400: #d6d1c8;  /* borde suave */
+  --linen-500: #b0a89e;  /* borde medio */
   --linen-600: #7a7470;  /* texto terciario */
-  --linen-700: #4a4541;  /* texto secundario */
-  --linen-800: #2c2926;  /* texto primario */
-  --linen-900: #1a1714;  /* texto máximo contraste */
+  --linen-700: #4d4740;  /* texto secundario */
+  --linen-800: #2d2926;  /* texto primario */
+  --linen-900: #1c1c1c;  /* negro bitti-gitti — máximo contraste */
 
-  /* Texto sobre fondo beige */
-  --text-1:   var(--linen-900);  /* #1a1714 — títulos */
-  --text-2:   var(--linen-700);  /* #4a4541 — cuerpo */
-  --text-3:   var(--linen-600);  /* #7a7470 — placeholders, meta */
-  --text-inv: #faf8f5;           /* texto sobre fondos oscuros */
+  /* Texto sobre fondo claro */
+  --text-1:   #1c1c1c;   /* títulos — bitti-gitti negro */
+  --text-2:   #4d4740;   /* cuerpo */
+  --text-3:   #9a938a;   /* placeholders, meta */
+  --text-inv: #ffffff;   /* texto sobre fondos oscuros */
 
   /* Superficies */
-  --bg:        var(--linen-300);   /* #d1ccc0 — fondo global */
-  --surface:   var(--linen-100);   /* #f2ede6 — cards, modales */
-  --surface-2: var(--linen-200);   /* #e6dfd5 — nav, header secundario */
-  --surface-3: var(--linen-50);    /* #faf8f5 — fondos blancos suaves */
-  --border:    var(--linen-400);   /* #b8b2a7 — bordes normales */
-  --border-2:  var(--linen-500);   /* #9b9590 — bordes hover/focus */
+  --bg:        #fafaf8;  /* fondo global — blanco cálido */
+  --surface:   #ffffff;  /* cards, modales — blanco puro */
+  --surface-2: #f5f3ef;  /* nav scrolled, fondos secundarios */
+  --surface-3: #fafaf8;  /* fondos más suaves */
+  --border:    #eceae4;  /* bordes normales */
+  --border-2:  #d6d1c8;  /* bordes hover/focus */
 
-  /* Acento: madera/tierra */
-  --accent:             var(--wood-400);          /* #a67c52 */
-  --accent-light:       var(--wood-300);          /* #c4a06a */
-  --accent-dark:        var(--wood-500);          /* #7d5c38 */
-  --accent-glow:        rgba(166, 124, 82, 0.18);
-  --accent-glow-strong: rgba(166, 124, 82, 0.35);
+  /* Acento: dorado ámbar */
+  --accent:             #ffb03a;           /* bitti-gitti golden */
+  --accent-light:       #ffc55c;
+  --accent-dark:        #e09800;
+  --accent-glow:        rgba(255, 176, 58, 0.20);
+  --accent-glow-strong: rgba(255, 176, 58, 0.40);
 
-  /* Semánticos — tonos más cálidos / tierra */
+  /* Semánticos */
   --success: #2d7a4f;   /* verde bosque */
-  --warning: #b87d1a;   /* ámbar cálido */
-  --error:   #c0392b;   /* rojo tierra */
+  --warning: #d97800;   /* ámbar oscuro */
+  --error:   #c0392b;   /* rojo */
   --info:    #2563a8;   /* azul sobrio */
 
   /* Tipografía */
-  --font-sans: -apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+  --font-sans:    'Quicksand', 'Inter', system-ui, sans-serif;
+  --font-heading: 'Oswald', 'Helvetica Neue', system-ui, sans-serif;
+  --font-serif:   'Merriweather', Georgia, serif;
 
   /* Escala tipográfica */
   --text-xs:   0.6875rem;
@@ -88,13 +90,13 @@
   --r-lg:   18px; --r-xl:   24px; --r-2xl: 32px;
   --r-full: 9999px;
 
-  /* Sombras — cálidas, tono madera */
-  --shadow-sm: 0 1px 4px rgba(60,40,20,.10), 0 2px 8px rgba(60,40,20,.07);
-  --shadow-md: 0 4px 16px rgba(60,40,20,.13), 0 1px 4px rgba(60,40,20,.08);
-  --shadow-lg: 0 12px 40px rgba(60,40,20,.16), 0 4px 12px rgba(60,40,20,.10);
-  --shadow-xl: 0 24px 72px rgba(60,40,20,.20), 0 8px 24px rgba(60,40,20,.12);
-  --shadow-accent: 0 8px 32px var(--accent-glow);
-  --glow-accent:   0 0 60px var(--accent-glow);
+  /* Sombras — limpias sobre blanco */
+  --shadow-sm: 0 1px 4px rgba(28,28,28,.06), 0 2px 8px rgba(28,28,28,.04);
+  --shadow-md: 0 4px 16px rgba(28,28,28,.08), 0 1px 4px rgba(28,28,28,.05);
+  --shadow-lg: 0 12px 40px rgba(28,28,28,.10), 0 4px 12px rgba(28,28,28,.06);
+  --shadow-xl: 0 24px 72px rgba(28,28,28,.13), 0 8px 24px rgba(28,28,28,.08);
+  --shadow-accent: 0 8px 32px rgba(255,176,58,.28);
+  --glow-accent:   0 0 60px rgba(255,176,58,.22);
 
   /* Transiciones */
   --ease:        cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -107,7 +109,7 @@
   /* Layout */
   --max-w:    1120px;
   --max-w-lg: 1440px;
-  --nav-h:    60px;
+  --nav-h:    66px;
 }
 
 /* ── Reset ────────────────────────────────────────────────── */
@@ -123,13 +125,14 @@ html {
 body {
   font-family: var(--font-sans);
   font-size: var(--text-base);
-  font-weight: 400;
+  font-weight: 500;
   line-height: 1.6;
   color: var(--text-1);
   background: var(--bg);
   min-height: 100dvh;
   overflow-x: hidden;
 }
+::selection { background: var(--accent); color: #1c1c1c; }
 img, video { display: block; max-width: 100%; height: auto; }
 a          { color: inherit; text-decoration: none; }
 button     { font-family: inherit; cursor: pointer; border: none; background: none; }
@@ -138,9 +141,11 @@ ul, ol     { list-style: none; }
 
 /* ── Tipografía base ──────────────────────────────────────── */
 h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
   font-weight: 700;
   line-height: 1.08;
-  letter-spacing: -0.025em;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   color: var(--text-1);
 }
 p { color: var(--text-2); line-height: 1.65; }
@@ -183,12 +188,13 @@ p { color: var(--text-2); line-height: 1.65; }
   gap: var(--sp-2);
   font-family: var(--font-sans);
   font-size: var(--text-base);
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   line-height: 1;
-  padding: 13px 22px;
+  padding: 13px 24px;
   border-radius: var(--r-full);
-  border: 1px solid transparent;
+  border: 2px solid transparent;
   cursor: pointer;
   transition: all var(--t-base);
   white-space: nowrap;
@@ -198,22 +204,22 @@ p { color: var(--text-2); line-height: 1.65; }
 }
 .btn:active { transform: scale(0.97); }
 
-/* Primary — cobre/madera dorada */
+/* Primary — dorado ámbar bitti-gitti */
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: #1c1c1c;
   border-color: var(--accent);
   box-shadow: var(--shadow-accent);
-  font-weight: 600;
+  font-weight: 700;
 }
 .btn-primary:hover {
   background: var(--accent-light);
   border-color: var(--accent-light);
   box-shadow: 0 8px 32px var(--accent-glow-strong);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }
 
-/* Secondary — superficie lino */
+/* Secondary — blanco limpio */
 .btn-secondary {
   background: var(--surface);
   color: var(--text-1);
@@ -222,7 +228,7 @@ p { color: var(--text-2); line-height: 1.65; }
 .btn-secondary:hover {
   background: var(--surface-2);
   border-color: var(--border-2);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   box-shadow: var(--shadow-sm);
 }
 
@@ -231,13 +237,13 @@ p { color: var(--text-2); line-height: 1.65; }
   background: transparent; color: var(--text-2);
   border-color: transparent; padding: 10px 16px;
 }
-.btn-ghost:hover { color: var(--text-1); background: rgba(60,40,20,0.06); }
+.btn-ghost:hover { color: var(--text-1); background: rgba(28,28,28,0.05); }
 
 /* Outline */
 .btn-outline {
   background: transparent; color: var(--accent); border-color: var(--accent);
 }
-.btn-outline:hover { background: var(--accent); color: #fff; }
+.btn-outline:hover { background: var(--accent); color: #1c1c1c; }
 
 /* Sizes */
 .btn-sm  { padding: 8px 16px; font-size: var(--text-sm); }
@@ -257,7 +263,7 @@ p { color: var(--text-2); line-height: 1.65; }
   cursor: pointer;
   transition: all var(--t-fast);
 }
-.nav-icon-btn:hover { background: rgba(60,40,20,0.07); color: var(--text-1); }
+.nav-icon-btn:hover { background: rgba(28,28,28,0.07); color: var(--text-1); }
 .nav-icon-btn svg { width: 20px; height: 20px; }
 
 .cart-badge {
@@ -284,7 +290,7 @@ p { color: var(--text-2); line-height: 1.65; }
   outline: none; -webkit-appearance: none;
 }
 .form-control::placeholder { color: var(--text-3); }
-.form-control:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.form-control:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,176,58,.18); }
 .form-error { font-size: var(--text-sm); color: var(--error); font-weight: 500; }
 
 /* ── Badges ───────────────────────────────────────────────── */
@@ -295,32 +301,37 @@ p { color: var(--text-2); line-height: 1.65; }
   font-size: 10px; font-weight: 600;
   letter-spacing: 0.04em; text-transform: uppercase;
 }
-.badge-wood   { background: rgba(166,124,82,.14); color: var(--wood-500); border: 1px solid rgba(166,124,82,.3); }
+.badge-wood   { background: rgba(255,176,58,.15); color: var(--amber-600); border: 1px solid rgba(255,176,58,.35); }
 .badge-green  { background: rgba(45,122,79,.12);  color: var(--success);  border: 1px solid rgba(45,122,79,.25); }
 .badge-blue   { background: rgba(37,99,168,.1);   color: var(--info);     border: 1px solid rgba(37,99,168,.2); }
 .badge-red    { background: rgba(192,57,43,.1);   color: var(--error);    border: 1px solid rgba(192,57,43,.2); }
 .badge-white  { background: var(--surface);       color: var(--text-2);   border: 1px solid var(--border); }
 .badge-gray   { background: rgba(100,100,100,.1); color: #666;            border: 1px solid rgba(100,100,100,.2); }
-.badge-yellow { background: rgba(255,183,0,.15);  color: #8a6200;         border: 1px solid rgba(255,183,0,.35); }
+.badge-yellow { background: rgba(255,176,58,.18); color: #b37000;         border: 1px solid rgba(255,176,58,.4); }
 
 /* ── Section typography ───────────────────────────────────── */
 .section-eyebrow {
   display: inline-flex; align-items: center; gap: var(--sp-2);
-  font-size: var(--text-xs); font-weight: 600;
-  letter-spacing: 0.12em; text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs); font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
   color: var(--accent); margin-bottom: var(--sp-4);
 }
 .section-eyebrow::before {
   content: ''; display: block;
-  width: 18px; height: 1px; background: var(--accent);
+  width: 22px; height: 2px; background: var(--accent);
+  border-radius: 2px;
 }
 .section-title {
+  font-family: var(--font-heading);
   font-size: clamp(var(--text-2xl), 4vw, var(--text-4xl));
-  font-weight: 800; letter-spacing: -0.03em; color: var(--text-1); line-height: 1.05;
+  font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
+  color: var(--text-1); line-height: 1.05;
 }
 .section-subtitle {
+  font-family: var(--font-sans);
   font-size: var(--text-md); color: var(--text-2);
-  line-height: 1.65; font-weight: 400; max-width: 54ch;
+  line-height: 1.65; font-weight: 500; max-width: 54ch;
   margin-top: var(--sp-3);
 }
 
@@ -471,7 +482,7 @@ p { color: var(--text-2); line-height: 1.65; }
 
 /* ── Skeleton ─────────────────────────────────────────────── */
 .skeleton {
-  background: linear-gradient(90deg, var(--linen-200) 25%, var(--linen-300) 50%, var(--linen-200) 75%);
+  background: linear-gradient(90deg, #f0ede8 25%, #e8e4de 50%, #f0ede8 75%);
   background-size: 200% 100%;
   animation: shimmer 1.6s ease infinite;
   border-radius: var(--r-md);

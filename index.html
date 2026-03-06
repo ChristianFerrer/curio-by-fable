@@ -5,21 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Curio by Fable — Objetos de madera para espacios únicos</title>
   <meta name="description" content="Curio by Fable. Productos de innovación hechos con madera. Diseño premium, artesanía contemporánea y materiales de origen certificado.">
-  <meta name="theme-color" content="#d1ccc0">
+  <meta name="theme-color" content="#fafaf8">
 
   <!-- Prefetch APIs para carga inmediata -->
   <link rel="prefetch" href="/api/products?featured=true&limit=8" as="fetch" crossorigin>
   <link rel="prefetch" href="/api/categories" as="fetch" crossorigin>
 
   <!-- Open Graph -->
-  <meta property="og:title" content="Curio by Fable — Madera e innovación">
-  <meta property="og:description" content="Objetos de madera de diseño premium. Innovación, artesanía y materiales sostenibles en cada pieza.">
+  <meta property="og:title" content="Curio by Fable — Juguetes de madera para niños">
+  <meta property="og:description" content="Juguetes de madera artesanales, educativos y seguros para niños. Diseño que inspira, madera que dura.">
   <meta property="og:type" content="website">
 
-  <!-- Google Fonts: Inter para UI limpia estilo Apple -->
+  <!-- Google Fonts: Oswald (headings) + Quicksand (body) + Merriweather (serif) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&family=Merriweather:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 
   <!-- CSS -->
   <link rel="stylesheet" href="/src/css/main.css">
@@ -795,21 +795,21 @@
     <section class="hero">
       <div class="hero-inner">
         <div>
-          <div class="hero-eyebrow">Madera certificada · Diseño contemporáneo</div>
+          <div class="hero-eyebrow">🌲 Hecho con amor · Madera certificada</div>
           <h1 class="hero-title">
-            Innovación <span class="accent-wood">tallada</span><br>en madera
+            Juguetes que<br><span class="accent-wood">inspiran</span><br>y duran
           </h1>
           <p class="hero-desc">
-            Piezas únicas donde la tecnología de diseño y la artesanía
-            en madera natural se encuentran. Para espacios que inspiran.
+            Juguetes de madera artesanales, seguros y educativos para los peques
+            de la casa. Diseñados para imaginar, crear y crecer.
           </p>
           <div class="hero-actions">
-            <a href="#/catalogo" class="btn btn-primary btn-lg">Explorar colección</a>
-            <a href="#/catalogo" class="btn btn-secondary btn-lg">Ver novedades</a>
+            <a href="#/catalogo" class="btn btn-primary btn-lg">Ver la tienda</a>
+            <a href="#/catalogo" class="btn btn-secondary btn-lg">Novedades →</a>
           </div>
         </div>
         <div class="hero-visual float">
-          <img src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80" alt="Curio by Fable — objetos de madera premium" loading="eager">
+          <img src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80" alt="Curio by Fable — juguetes de madera artesanales" loading="eager">
           <div class="hero-visual-glow"></div>
         </div>
       </div>
@@ -820,7 +820,7 @@
         </div>
         <div class="trust-item">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-          Acabados sin químicos
+          Pinturas no tóxicas
         </div>
         <div class="trust-item">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
@@ -837,8 +837,8 @@
     <section style="padding:var(--sp-4xl) 0" class="container">
       <div class="reveal" style="margin-bottom:var(--sp-8)">
         <div class="section-eyebrow">Colecciones</div>
-        <h2 class="section-title">Explora por categoría</h2>
-        <p class="section-subtitle">Cada colección diseñada con propósito, materiales nobles y atención al detalle.</p>
+        <h2 class="section-title">Juega, aprende, crece</h2>
+        <p class="section-subtitle">Cada categoría diseñada para una etapa del desarrollo. Siempre con madera natural y colores seguros.</p>
       </div>
       <div class="categories-grid">
         <template x-for="cat in categories" :key="cat.id">
@@ -854,9 +854,9 @@
     <section style="padding:var(--sp-xl) 0 var(--sp-4xl)" class="container">
       <div class="reveal" style="margin-bottom:var(--sp-8);display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-6);flex-wrap:wrap">
         <div>
-          <div class="section-eyebrow">Selección</div>
-          <h2 class="section-title">Piezas destacadas</h2>
-          <p class="section-subtitle">Las piezas más valoradas de nuestra colección.</p>
+          <div class="section-eyebrow">Más queridos</div>
+          <h2 class="section-title">Los favoritos</h2>
+          <p class="section-subtitle">Los juguetes más adorados por las familias de nuestra comunidad.</p>
         </div>
         <a href="#/catalogo" class="btn btn-ghost btn-sm hide-mobile">Ver colección completa →</a>
       </div>
@@ -912,23 +912,23 @@
         <div class="features-strip">
           <div class="feature-item reveal">
             <span class="feature-icon">🌲</span>
-            <h3 class="feature-title">Madera FSC certificada</h3>
-            <p class="feature-desc">Materiales de bosques gestionados responsablemente. Cada pieza, un compromiso con el planeta.</p>
+            <h3 class="feature-title">Madera segura</h3>
+            <p class="feature-desc">Madera FSC certificada y pinturas no tóxicas. Seguros para que los peques muerdan, toquen y jueguen.</p>
           </div>
           <div class="feature-item reveal reveal-delay-1">
-            <span class="feature-icon">✦</span>
-            <h3 class="feature-title">Diseño contemporáneo</h3>
-            <p class="feature-desc">Estética minimalista y funcional. Piezas que encajan en espacios que valoran el buen diseño.</p>
+            <span class="feature-icon">🧠</span>
+            <h3 class="feature-title">Aprende jugando</h3>
+            <p class="feature-desc">Cada juguete diseñado para estimular la creatividad, la lógica y el desarrollo motor de tus hijos.</p>
           </div>
           <div class="feature-item reveal reveal-delay-2">
-            <span class="feature-icon">⬡</span>
-            <h3 class="feature-title">Artesanía precisa</h3>
-            <p class="feature-desc">Fabricación con técnicas de alta precisión. Acabados a mano para detalles únicos en cada pieza.</p>
+            <span class="feature-icon">🎨</span>
+            <h3 class="feature-title">Colores vivos</h3>
+            <p class="feature-desc">Pigmentos naturales y vibrantes. Bonitos en la habitación y fascinantes para las manos curiosas.</p>
           </div>
           <div class="feature-item reveal reveal-delay-3">
-            <span class="feature-icon">∞</span>
+            <span class="feature-icon">♾️</span>
             <h3 class="feature-title">Para siempre</h3>
-            <p class="feature-desc">Construidos para durar décadas. La madera mejora con el tiempo. Una inversión que trasciende.</p>
+            <p class="feature-desc">La madera dura lo que dura la infancia... y mucho más. Un regalo que se hereda de generación en generación.</p>
           </div>
         </div>
       </div>
@@ -937,8 +937,8 @@
     <!-- Newsletter -->
     <section class="section container">
       <div class="newsletter-section reveal">
-        <h2 class="newsletter-title">Acceso anticipado a nuevas piezas</h2>
-        <p class="newsletter-desc">Suscríbete y sé el primero en conocer nuevas colecciones, ediciones limitadas y talleres.</p>
+        <h2 class="newsletter-title">🎁 Novedades antes que nadie</h2>
+        <p class="newsletter-desc">Suscríbete y recibe primero las nuevas colecciones, descuentos exclusivos y consejos de juego.</p>
         <div x-show="!newsletterDone">
           <div class="newsletter-form">
             <input type="email" class="newsletter-input" placeholder="tu@email.com"
