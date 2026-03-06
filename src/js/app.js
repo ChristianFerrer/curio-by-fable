@@ -111,13 +111,21 @@ window.app = function() { return ({
     },
 
     // ── Checkout ─────────────────────────────────────────────
-    checkoutStep: 1,          // 1=address, 2=confirm
+    checkoutStep: 1,          // 1=dirección, 2=pago Stripe
     checkoutLoading: false,
     lastOrderId: null,
     shippingForm: {
       full_name: '', address_line1: '', address_line2: '',
       city: '', province: '', postal_code: '', phone: '',
     },
+
+    // ── Stripe ───────────────────────────────────────────────
+    stripeInstance:  null,
+    stripeElements:  null,
+    clientSecret:    null,
+    pendingOrderId:  null,
+    paymentError:    '',
+    paymentLoading:  false,
 
     // ── Orders / Profile ──────────────────────────────────────
     userOrders: [],
@@ -135,10 +143,15 @@ window.app = function() { return ({
     // INIT
     // ════════════════════════════════════════════════════════
     async init() {
-      // Restaurar sesión
-      const { data: { session } } = await supabase.auth.getSession();
-      this.user = session?.user || null;
+      // Restaurar carrito (síncrono, localStorage)
+      this._loadCart();
 
+      // Nav scroll listener
+      window.addEventListener('scroll', () => {
+        this.navScrolled = window.scrollY > 20;
+      }, { passive: true });
+
+      // Auth state listener (antes de getSession para no perder eventos)
       supabase.auth.onAuthStateChange((_event, session) => {
         this.user = session?.user || null;
         if (this.afterAuthRedirect && this.user) {
@@ -149,23 +162,19 @@ window.app = function() { return ({
         }
       });
 
-      // Restaurar carrito
-      this._loadCart();
+      // Lanzar sesión + categorías + ruta en PARALELO
+      const [sessionResult] = await Promise.all([
+        supabase.auth.getSession(),
+        this.loadCategories(),
+        this._handleRoute(location.hash),
+      ]);
+      this.user = sessionResult.data.session?.user || null;
 
-      // Nav scroll listener
-      window.addEventListener('scroll', () => {
-        this.navScrolled = window.scrollY > 20;
-      }, { passive: true });
-
-      // Routing basado en hash
-      this._handleRoute(location.hash);
+      // Routing hashchange
       window.addEventListener('hashchange', () => this._handleRoute(location.hash));
 
-      // Cargar categorías
-      await this.loadCategories();
-
       // Reveal animations
-      setTimeout(initReveal, 300);
+      setTimeout(initReveal, 100);
     },
 
     // ── Router ───────────────────────────────────────────────
@@ -178,6 +187,7 @@ window.app = function() { return ({
       if (path === '/' || path === '') {
         this.currentView = 'home';
         this.loadFeaturedProducts();
+        return;
       } else if (path === '/catalogo' || path.startsWith('/catalogo?')) {
         this.currentView = 'catalog';
         // Parsear filtros de la URL
@@ -456,38 +466,138 @@ window.app = function() { return ({
       return true;
     },
 
-    goToConfirm() {
-      if (this.validateShipping()) this.checkoutStep = 2;
-    },
-
-    async submitOrder() {
+    // Paso 1 → Paso 2: valida dirección y monta Stripe Payment Element
+    async goToPayment() {
+      if (!this.validateShipping()) return;
       if (!this.user) { this.openLogin(); return; }
       if (!this.cartItems.length) { this.toast('El carrito está vacío.', 'error'); return; }
 
       this.checkoutLoading = true;
+      this.paymentError    = '';
+
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
 
-        const res = await fetch('/api/orders', {
+        // Crear orden + PaymentIntent en el servidor
+        const res = await fetch('/api/create-payment-intent', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body:    JSON.stringify({
-            items: this.cartItems.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+            items:            this.cartItems.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
             shipping_address: this.shippingForm,
           }),
         });
 
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error al procesar el pedido.');
+        if (!res.ok) throw new Error(data.error || 'Error al preparar el pago.');
 
-        this.clearCart();
-        this.navigate('/pedido-confirmado/' + data.order_id);
+        this.clientSecret   = data.client_secret;
+        this.pendingOrderId = data.order_id;
+        this.checkoutStep   = 2;
+
+        // Montar Stripe Payment Element en el siguiente tick (tras render Alpine)
+        await this.$nextTick();
+        this._mountStripeElement();
+
       } catch (e) {
         this.toast(e.message, 'error');
       } finally {
         this.checkoutLoading = false;
       }
+    },
+
+    // Inicializa Stripe y monta el Payment Element en #stripe-payment-element
+    _mountStripeElement() {
+      const cfg = window.__CURIO_CONFIG__;
+      if (!cfg?.stripePublishableKey) {
+        this.paymentError = 'Stripe no está configurado. Contacta con el administrador.';
+        return;
+      }
+
+      try {
+        this.stripeInstance = window.Stripe(cfg.stripePublishableKey);
+        this.stripeElements = this.stripeInstance.elements({
+          clientSecret: this.clientSecret,
+          appearance: {
+            theme:     'stripe',
+            variables: {
+              colorPrimary:       '#ffb03a',
+              colorBackground:    '#ffffff',
+              colorText:          '#1c1c1c',
+              colorDanger:        '#e3000b',
+              fontFamily:         'Quicksand, system-ui, sans-serif',
+              borderRadius:       '10px',
+              fontSizeBase:       '15px',
+            },
+          },
+        });
+
+        const paymentElement = this.stripeElements.create('payment');
+        paymentElement.mount('#stripe-payment-element');
+        paymentElement.on('ready', () => { this.paymentError = ''; });
+      } catch (err) {
+        console.error('[Stripe] mount error:', err);
+        this.paymentError = 'Error al cargar el formulario de pago. Recarga la página.';
+      }
+    },
+
+    // Confirmar pago con Stripe y luego verificar server-side
+    async submitPayment() {
+      if (!this.stripeInstance || !this.stripeElements) return;
+
+      this.paymentLoading = true;
+      this.paymentError   = '';
+
+      try {
+        // Confirmar con Stripe (sin redirect para SPA)
+        const { error, paymentIntent } = await this.stripeInstance.confirmPayment({
+          elements: this.stripeElements,
+          redirect: 'if_required',
+        });
+
+        if (error) {
+          // Error del formulario o del banco (visible para el usuario)
+          this.paymentError = error.message || 'Error al procesar el pago.';
+          return;
+        }
+
+        if (paymentIntent?.status !== 'succeeded') {
+          this.paymentError = 'El pago no se completó. Inténtalo de nuevo.';
+          return;
+        }
+
+        // Verificar server-side y actualizar estado del pedido
+        await this._confirmOrderServerSide(paymentIntent.id, this.pendingOrderId);
+
+      } catch (e) {
+        this.paymentError = e.message || 'Error inesperado al procesar el pago.';
+      } finally {
+        this.paymentLoading = false;
+      }
+    },
+
+    // Llama a /api/confirm-order para verificar y actualizar la BD
+    async _confirmOrderServerSide(paymentIntentId, orderId) {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const res = await fetch('/api/confirm-order', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body:    JSON.stringify({ payment_intent_id: paymentIntentId, order_id: orderId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al confirmar el pedido.');
+
+      // Éxito — limpiar carrito y navegar a confirmación
+      this.clearCart();
+      this.stripeInstance  = null;
+      this.stripeElements  = null;
+      this.clientSecret    = null;
+      this.pendingOrderId  = null;
+      this.navigate('/pedido-confirmado/' + orderId);
     },
 
     // ════════════════════════════════════════════════════════

@@ -138,16 +138,18 @@ CREATE POLICY "products_read_active"
 
 -- ── PEDIDOS ──────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS curio.orders (
-  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id          UUID NOT NULL REFERENCES auth.users(id),
-  status           curio.order_status DEFAULT 'pendiente',
-  subtotal         NUMERIC(10,2) NOT NULL,
-  shipping_cost    NUMERIC(10,2) DEFAULT 4.99,
-  total            NUMERIC(10,2) NOT NULL,
-  shipping_address JSONB NOT NULL,
-  notes            TEXT,
-  created_at       TIMESTAMPTZ DEFAULT NOW(),
-  updated_at       TIMESTAMPTZ DEFAULT NOW()
+  id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id                  UUID NOT NULL REFERENCES auth.users(id),
+  status                   curio.order_status DEFAULT 'pendiente',
+  subtotal                 NUMERIC(10,2) NOT NULL,
+  shipping_cost            NUMERIC(10,2) DEFAULT 4.99,
+  total                    NUMERIC(10,2) NOT NULL,
+  shipping_address         JSONB NOT NULL,
+  notes                    TEXT,
+  stripe_payment_intent_id TEXT,
+  payment_status           TEXT DEFAULT 'pending',
+  created_at               TIMESTAMPTZ DEFAULT NOW(),
+  updated_at               TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_curio_orders_user   ON curio.orders(user_id, created_at DESC);
@@ -441,6 +443,19 @@ DROP TRIGGER IF EXISTS trg_crm_note_updated_at ON curio.crm_notes;
 CREATE TRIGGER trg_crm_note_updated_at
   BEFORE UPDATE ON curio.crm_notes
   FOR EACH ROW EXECUTE FUNCTION curio.update_crm_note_updated_at();
+
+-- ============================================================
+-- STRIPE — Columnas adicionales en orders (si la tabla ya existe)
+-- Ejecutar solo si ya tenías la tabla orders creada antes de esta migración
+-- ============================================================
+ALTER TABLE curio.orders
+  ADD COLUMN IF NOT EXISTS stripe_payment_intent_id TEXT,
+  ADD COLUMN IF NOT EXISTS payment_status           TEXT DEFAULT 'pending';
+
+-- Añadir 'esperando_pago' al enum order_status (para pedidos pendientes de pago)
+DO $$ BEGIN
+  ALTER TYPE curio.order_status ADD VALUE IF NOT EXISTS 'esperando_pago';
+EXCEPTION WHEN others THEN NULL; END $$;
 
 -- ============================================================
 -- NOTAS POST-INSTALACIÓN

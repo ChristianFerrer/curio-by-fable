@@ -30,7 +30,9 @@
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
   <!-- 2. Supabase UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <!-- 3. Config pública -->
+  <!-- 3. Stripe.js (carga asíncrona oficial — no defer/async para máxima compatibilidad) -->
+  <script src="https://js.stripe.com/v3/"></script>
+  <!-- 4. Config pública (Supabase + Stripe publishable key) -->
   <script src="/public/config.js"></script>
   <!-- 4. App factory — define window.app ANTES de que Alpine procese el DOM -->
   <script>
@@ -157,10 +159,18 @@
         cartTotal:    4.99,
 
         // ── Checkout
-        checkoutStep:    1,
+        checkoutStep:    1,          // 1=dirección, 2=pago Stripe
         checkoutLoading: false,
         lastOrderId:     null,
         shippingForm:    { full_name:'', address_line1:'', address_line2:'', city:'', province:'', postal_code:'', phone:'' },
+
+        // ── Stripe
+        _stripeInstance: null,
+        _stripeElements: null,
+        _clientSecret:   null,
+        _pendingOrderId: null,
+        paymentError:    '',
+        paymentLoading:  false,
 
         // ── Orders
         userOrders:    [],
@@ -564,19 +574,20 @@
           return true;
         },
 
-        goToConfirm: function() {
-          if (this.validateShipping()) this.checkoutStep = 2;
-        },
-
-        submitOrder: function() {
+        // Paso 1 → 2: valida dirección, crea PaymentIntent y monta Stripe
+        goToPayment: function() {
           var self = this;
-          if (!this.user)          { this.openLogin(); return; }
+          if (!this.validateShipping()) return;
+          if (!this.user)             { this.openLogin(); return; }
           if (!this.cartItems.length) { this.toast('El carrito está vacío.', 'error'); return; }
+
           this.checkoutLoading = true;
+          this.paymentError    = '';
+
           sb.auth.getSession()
             .then(function(res) {
               var token = (res && res.data && res.data.session) ? res.data.session.access_token : '';
-              return fetch('/api/orders', {
+              return fetch('/api/create-payment-intent', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                 body:    JSON.stringify({
@@ -587,16 +598,113 @@
             })
             .then(function(r) {
               return r.json().then(function(d) {
-                if (!r.ok) throw new Error(d.error || 'Error al procesar el pedido.');
+                if (!r.ok) throw new Error(d.error || 'Error al preparar el pago.');
                 return d;
               });
             })
             .then(function(d) {
-              self.clearCart();
-              self.navigate('/pedido-confirmado/' + d.order_id);
+              self._clientSecret   = d.client_secret;
+              self._pendingOrderId = d.order_id;
+              self.checkoutStep    = 2;
+
+              // Montar Stripe en el siguiente frame de pintado
+              setTimeout(function() { self._mountStripeElement(); }, 80);
             })
-            .catch(function(e) { self.toast(e.message || 'Error al procesar el pedido.', 'error'); })
+            .catch(function(e) { self.toast(e.message || 'Error al preparar el pago.', 'error'); })
             .finally(function() { self.checkoutLoading = false; });
+        },
+
+        // Monta el Stripe Payment Element en #stripe-payment-element
+        _mountStripeElement: function() {
+          var cfg = window.__CURIO_CONFIG__ || {};
+          if (!cfg.stripePublishableKey || cfg.stripePublishableKey.indexOf('REEMPLAZAR') !== -1) {
+            this.paymentError = 'Stripe no está configurado. Contacta con el administrador.';
+            return;
+          }
+          if (typeof window.Stripe === 'undefined') {
+            this.paymentError = 'No se pudo cargar Stripe. Comprueba tu conexión y recarga.';
+            return;
+          }
+          var self = this;
+          try {
+            self._stripeInstance = window.Stripe(cfg.stripePublishableKey);
+            self._stripeElements = self._stripeInstance.elements({
+              clientSecret: self._clientSecret,
+              appearance: {
+                theme: 'stripe',
+                variables: {
+                  colorPrimary:    '#ffb03a',
+                  colorBackground: '#ffffff',
+                  colorText:       '#1c1c1c',
+                  colorDanger:     '#e3000b',
+                  fontFamily:      'Quicksand, system-ui, sans-serif',
+                  borderRadius:    '10px',
+                  fontSizeBase:    '15px',
+                },
+              },
+            });
+            var pe = self._stripeElements.create('payment');
+            pe.mount('#stripe-payment-element');
+          } catch (err) {
+            console.error('[Stripe] mount error:', err);
+            self.paymentError = 'Error al cargar el formulario de pago. Recarga la página.';
+          }
+        },
+
+        // Confirma el pago con Stripe y luego lo verifica en el servidor
+        submitPayment: function() {
+          var self = this;
+          if (!this._stripeInstance || !this._stripeElements) return;
+
+          this.paymentLoading = true;
+          this.paymentError   = '';
+
+          self._stripeInstance.confirmPayment({
+            elements: self._stripeElements,
+            redirect: 'if_required',
+          })
+          .then(function(result) {
+            if (result.error) {
+              self.paymentError = result.error.message || 'Error al procesar el pago.';
+              return;
+            }
+            if (!result.paymentIntent || result.paymentIntent.status !== 'succeeded') {
+              self.paymentError = 'El pago no se completó. Inténtalo de nuevo.';
+              return;
+            }
+            // Verificar server-side
+            return sb.auth.getSession()
+              .then(function(res) {
+                var token = (res && res.data && res.data.session) ? res.data.session.access_token : '';
+                return fetch('/api/confirm-order', {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                  body:    JSON.stringify({
+                    payment_intent_id: result.paymentIntent.id,
+                    order_id:          self._pendingOrderId,
+                  }),
+                });
+              })
+              .then(function(r) {
+                return r.json().then(function(d) {
+                  if (!r.ok) throw new Error(d.error || 'Error al confirmar el pedido.');
+                  return d;
+                });
+              })
+              .then(function() {
+                var orderId = self._pendingOrderId;
+                self.clearCart();
+                self._stripeInstance = null;
+                self._stripeElements = null;
+                self._clientSecret   = null;
+                self._pendingOrderId = null;
+                self.navigate('/pedido-confirmado/' + orderId);
+              });
+          })
+          .catch(function(e) {
+            self.paymentError = e.message || 'Error inesperado. Inténtalo de nuevo.';
+          })
+          .finally(function() { self.paymentLoading = false; });
         },
 
         // ════════════════════════════════════
@@ -1244,7 +1352,7 @@
     <div class="flex items-center gap-md" style="margin-bottom:var(--sp-xl)">
       <div class="badge" :class="checkoutStep>=1 ? 'badge-blue' : 'badge-gray'">1 · Dirección</div>
       <div style="flex:1;height:2px;background:var(--border)"></div>
-      <div class="badge" :class="checkoutStep>=2 ? 'badge-blue' : 'badge-gray'">2 · Confirmar</div>
+      <div class="badge" :class="checkoutStep>=2 ? 'badge-blue' : 'badge-gray'">2 · Pago</div>
     </div>
 
     <div class="checkout-layout">
@@ -1288,18 +1396,23 @@
                     <input class="form-control" type="tel" x-model="shippingForm.phone" placeholder="+34 600 000 000">
                   </div>
                 </div>
-                <button class="btn btn-primary btn-lg" @click="goToConfirm()">Continuar →</button>
+                <button class="btn btn-primary btn-lg" @click="goToPayment()" :disabled="checkoutLoading">
+                  <span x-show="!checkoutLoading">Ir a pagar →</span>
+                  <span x-show="checkoutLoading">Preparando pago…</span>
+                </button>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Step 2: Confirmar -->
+        <!-- Step 2: Pago con Stripe -->
         <div x-show="checkoutStep===2">
+
+          <!-- Resumen de artículos (solo lectura) -->
           <div class="admin-card" style="margin-bottom:var(--sp-lg)">
             <div class="admin-card-header">
-              <h3 class="admin-card-title">📋 Resumen del pedido</h3>
-              <button class="btn btn-ghost btn-sm" @click="checkoutStep=1">← Editar dirección</button>
+              <h3 class="admin-card-title">📋 Tu pedido</h3>
+              <button class="btn btn-ghost btn-sm" @click="checkoutStep=1">← Cambiar dirección</button>
             </div>
             <div style="padding:var(--sp-lg)">
               <template x-for="item in cartItems" :key="item.product_id">
@@ -1312,25 +1425,69 @@
                   </div>
                 </div>
               </template>
+
+              <!-- Totales -->
+              <div style="border-top:1px solid var(--border);margin-top:var(--sp-md);padding-top:var(--sp-md)">
+                <div class="cart-summary-row"><span>Subtotal</span><span x-text="formatPrice(cartSubtotal)"></span></div>
+                <div class="cart-summary-row">
+                  <span>Envío</span>
+                  <span x-show="cartShipping===0" style="color:var(--success);font-weight:700">Gratis 🎉</span>
+                  <span x-show="cartShipping>0" x-text="formatPrice(cartShipping)"></span>
+                </div>
+                <div class="cart-summary-row total"><span>Total</span><span x-text="formatPrice(cartTotal)"></span></div>
+              </div>
+
+              <!-- Dirección de entrega (resumen) -->
+              <div style="margin-top:var(--sp-md);padding-top:var(--sp-md);border-top:1px solid var(--border);font-size:var(--text-sm);color:var(--text-2)">
+                <div style="font-weight:700;color:var(--text-1);margin-bottom:4px">📦 Entrega a:</div>
+                <div x-text="shippingForm.full_name"></div>
+                <div x-text="shippingForm.address_line1"></div>
+                <div x-text="shippingForm.city + ' ' + shippingForm.postal_code"></div>
+              </div>
             </div>
           </div>
 
-          <div class="admin-card" style="margin-bottom:var(--sp-lg);padding:var(--sp-lg)">
-            <h4 style="font-family:var(--font-sans);font-weight:800;margin-bottom:var(--sp-md)">📦 Dirección de entrega</h4>
-            <p style="color:var(--text-2)" x-text="shippingForm.full_name"></p>
-            <p style="color:var(--text-2)" x-text="shippingForm.address_line1"></p>
-            <p style="color:var(--text-2)" x-text="shippingForm.city + ', ' + shippingForm.postal_code"></p>
-            <p style="color:var(--text-2)" x-text="shippingForm.phone"></p>
-          </div>
+          <!-- Stripe Payment Element -->
+          <div class="admin-card" style="margin-bottom:var(--sp-lg)">
+            <div class="admin-card-header">
+              <h3 class="admin-card-title">💳 Datos de pago</h3>
+              <div style="display:flex;align-items:center;gap:6px;font-size:0.75rem;color:var(--text-3)">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                Pago seguro con Stripe
+              </div>
+            </div>
+            <div style="padding:var(--sp-xl)">
 
-          <div style="background:rgba(196,135,42,.1);border:1px solid rgba(196,135,42,.3);border-radius:var(--r-md);padding:var(--sp-md);margin-bottom:var(--sp-lg);font-size:var(--text-sm);color:var(--text-2)">
-            💳 <strong style="color:var(--accent)">Pago:</strong> Esta es una demo. No se procesará ningún cargo real.
-          </div>
+              <!-- El Payment Element se monta aquí -->
+              <div id="stripe-payment-element" style="min-height:200px"></div>
 
-          <button class="btn btn-primary btn-xl btn-full" @click="submitOrder()" :disabled="checkoutLoading">
-            <span x-show="!checkoutLoading">✅ Confirmar pedido — <span x-text="formatPrice(cartTotal)"></span></span>
-            <span x-show="checkoutLoading">Procesando...</span>
-          </button>
+              <!-- Error de pago -->
+              <div x-show="paymentError" x-text="paymentError"
+                   style="margin-top:var(--sp-md);padding:var(--sp-md);background:rgba(227,0,11,.08);border:1px solid rgba(227,0,11,.25);border-radius:var(--r-md);color:#c0000a;font-size:var(--text-sm)">
+              </div>
+
+              <!-- Botón de pago -->
+              <button class="btn btn-primary btn-xl btn-full" style="margin-top:var(--sp-xl)"
+                      @click="submitPayment()" :disabled="paymentLoading">
+                <span x-show="!paymentLoading">
+                  🔒 Pagar <span x-text="formatPrice(cartTotal)"></span>
+                </span>
+                <span x-show="paymentLoading" style="display:flex;align-items:center;gap:8px;justify-content:center">
+                  <span class="page-loader" style="padding:0;gap:3px;display:inline-flex">
+                    <span style="width:3px;height:14px"></span>
+                    <span style="width:3px;height:14px"></span>
+                    <span style="width:3px;height:14px"></span>
+                  </span>
+                  Procesando…
+                </span>
+              </button>
+
+              <p style="text-align:center;margin-top:var(--sp-md);font-size:0.75rem;color:var(--text-3)">
+                Tus datos están protegidos con cifrado SSL de 256 bits.
+                No almacenamos datos de tu tarjeta.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
