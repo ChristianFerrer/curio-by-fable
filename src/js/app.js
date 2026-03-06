@@ -476,14 +476,11 @@ window.app = function() { return ({
       this.paymentError    = '';
 
       try {
-        // Intentar refrescar sesión antes de pagar (evita "token expirado")
-        let { data: { session } } = await supabase.auth.getSession();
-        if (!session?.access_token) {
-          const { data: refreshed } = await supabase.auth.refreshSession();
-          session = refreshed.session;
-        }
-        const token = session?.access_token;
+        // Forzar refresh de sesión para garantizar un token fresco
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        const token = refreshed?.session?.access_token;
         if (!token) {
+          await supabase.auth.signOut();
           this.user = null;
           this.checkoutLoading = false;
           this.toast('Tu sesión ha expirado. Inicia sesión de nuevo.', 'error');
@@ -502,6 +499,15 @@ window.app = function() { return ({
         });
 
         const data = await res.json();
+        // Si el servidor devuelve 401 (sesión inválida), forzar re-login
+        if (res.status === 401) {
+          await supabase.auth.signOut();
+          this.user = null;
+          this.checkoutLoading = false;
+          this.toast('Sesión expirada. Por favor, inicia sesión de nuevo.', 'error');
+          this.openLogin();
+          return;
+        }
         if (!res.ok) throw new Error(data.error || 'Error al preparar el pago.');
 
         this.clientSecret   = data.client_secret;
