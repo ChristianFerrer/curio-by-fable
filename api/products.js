@@ -1,5 +1,6 @@
 // api/products.js — GET /api/products
-// Parámetros: category, search, featured, min_price, max_price, age_min, age_max, sort, page, limit
+// Lista:    ?category=&search=&featured=&min_price=&max_price=&age_min=&age_max=&sort=&page=&limit=
+// Producto: ?slug=<slug>  → devuelve producto único + relacionados
 'use strict';
 
 const { getSupabaseAdmin } = require('./_lib/supabase');
@@ -43,9 +44,58 @@ function queryLocal(params) {
   return { products: page, total, totalPages: Math.ceil(total / pageSize) };
 }
 
+// ── Handler único para producto por slug ──────────────────
+async function handleSingleProduct(req, res, slug) {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .schema('curio').from('products')
+      .select('*')
+      .eq('slug', slug)
+      .eq('active', true)
+      .single();
+
+    if (error) {
+      console.warn('[products/slug] Usando datos locales:', error.message);
+      const product = PRODUCTS.find(p => p.slug === slug && p.active);
+      if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
+      const related = PRODUCTS
+        .filter(p => p.category === product.category && p.id !== product.id && p.active)
+        .slice(0, 4)
+        .map(p => ({ id: p.id, name: p.name, slug: p.slug, price: p.price, compare_price: p.compare_price, images: p.images, category: p.category }));
+      return res.status(200).json({ ...product, related, _source: 'local' });
+    }
+
+    if (!data) return res.status(404).json({ error: 'Producto no encontrado' });
+
+    const { data: related } = await supabase
+      .schema('curio').from('products')
+      .select('id, name, slug, price, compare_price, images, category')
+      .eq('category', data.category)
+      .eq('active', true)
+      .neq('id', data.id)
+      .limit(4);
+
+    return res.status(200).json({ ...data, related: related || [] });
+
+  } catch (e) {
+    console.error('[products/slug] Error:', e.message);
+    const product = PRODUCTS.find(p => p.slug === slug && p.active);
+    if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
+    const related = PRODUCTS
+      .filter(p => p.category === product.category && p.id !== product.id && p.active)
+      .slice(0, 4)
+      .map(p => ({ id: p.id, name: p.name, slug: p.slug, price: p.price, compare_price: p.compare_price, images: p.images, category: p.category }));
+    return res.status(200).json({ ...product, related, _source: 'local' });
+  }
+}
+
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET')    return res.status(405).json({ error: 'Método no permitido' });
+
+  // Ruta de producto único: /api/products?slug=...
+  if (req.query.slug) return handleSingleProduct(req, res, req.query.slug);
 
   const {
     category, search, featured,
@@ -90,9 +140,14 @@ module.exports = async function handler(req, res) {
       // Fallback a datos locales si curio schema no existe
       console.warn('[products] Usando datos locales:', error.message);
       const local = queryLocal({ category, search, featured, min_price, max_price, age_min, age_max, sort, pageNum, pageSize });
+      // Caché de 60s para listados con filtros, 5min para featured/sin filtros
+      const ttl = (featured || category || search) ? 60 : 300;
+      res.setHeader('Cache-Control', `s-maxage=${ttl}, stale-while-revalidate=${ttl * 2}`);
       return res.status(200).json({ ...local, page: pageNum, pageSize, _source: 'local' });
     }
 
+    const ttl = (featured || category || search) ? 60 : 300;
+    res.setHeader('Cache-Control', `s-maxage=${ttl}, stale-while-revalidate=${ttl * 2}`);
     return res.status(200).json({
       products:   data || [],
       total:      count || 0,
@@ -104,6 +159,7 @@ module.exports = async function handler(req, res) {
   } catch (e) {
     console.error('[products] Error inesperado:', e.message);
     const local = queryLocal({ category, search, featured, min_price, max_price, age_min, age_max, sort, pageNum, pageSize });
+    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
     return res.status(200).json({ ...local, page: pageNum, pageSize, _source: 'local' });
   }
 };

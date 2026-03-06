@@ -350,7 +350,7 @@ window.app = function() { return ({
       this.currentProduct        = null;
       this.currentProductLoading = true;
       try {
-        const res = await fetch('/api/product?slug=' + encodeURIComponent(slug));
+        const res = await fetch('/api/products?slug=' + encodeURIComponent(slug));
         if (!res.ok) throw new Error('not found');
         this.currentProduct = await res.json();
       } catch (_) {

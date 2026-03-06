@@ -308,7 +308,7 @@
           var self = this;
           this.currentProduct = null;
           this.currentProductLoading = true;
-          fetch('/api/product?slug=' + encodeURIComponent(slug))
+          fetch('/api/products?slug=' + encodeURIComponent(slug))
             .then(function(r) {
               if (!r.ok) throw new Error('not found');
               return r.json();
