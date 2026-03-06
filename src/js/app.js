@@ -476,8 +476,20 @@ window.app = function() { return ({
       this.paymentError    = '';
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        // Intentar refrescar sesión antes de pagar (evita "token expirado")
+        let { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          const { data: refreshed } = await supabase.auth.refreshSession();
+          session = refreshed.session;
+        }
         const token = session?.access_token;
+        if (!token) {
+          this.user = null;
+          this.checkoutLoading = false;
+          this.toast('Tu sesión ha expirado. Inicia sesión de nuevo.', 'error');
+          this.openLogin();
+          return;
+        }
 
         // Crear orden + PaymentIntent en el servidor
         const res = await fetch('/api/create-payment-intent', {
@@ -579,7 +591,11 @@ window.app = function() { return ({
 
     // Llama a /api/confirm-order para verificar y actualizar la BD
     async _confirmOrderServerSide(paymentIntentId, orderId) {
-      const { data: { session } } = await supabase.auth.getSession();
+      let { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        session = refreshed.session;
+      }
       const token = session?.access_token;
 
       const res = await fetch('/api/confirm-order', {
