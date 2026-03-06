@@ -567,7 +567,7 @@
             this.toast('Completa todos los campos obligatorios.', 'error');
             return false;
           }
-          if (!/^d{5}$/.test(f.postal_code)) {
+          if (!/^\d{5}$/.test(f.postal_code)) {
             this.toast('Código postal debe tener 5 dígitos.', 'error');
             return false;
           }
